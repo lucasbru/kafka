@@ -763,7 +763,13 @@ public class StreamThread extends Thread {
         final long startMs = time.milliseconds();
         now = startMs;
 
-        final long pollLatency = pollPhase();
+        final long pollLatency;
+        taskManager.preparePoll();
+        try {
+            pollLatency = pollPhase();
+        } finally {
+            taskManager.postPoll();
+        }
 
         // Shutdown hook could potentially be triggered and transit the thread state to PENDING_SHUTDOWN during #pollRequests().
         // The task manager internal states could be uninitialized if the state transition happens during #onPartitionsAssigned().
@@ -995,6 +1001,7 @@ public class StreamThread extends Thread {
         while (!nonFatalExceptionsToHandle.isEmpty()) {
             streamsUncaughtExceptionHandler.accept(nonFatalExceptionsToHandle.poll(), true);
         }
+
         return pollLatency;
     }
 
