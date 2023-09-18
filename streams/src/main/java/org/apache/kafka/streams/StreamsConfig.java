@@ -1206,7 +1206,7 @@ public class StreamsConfig extends AbstractConfig {
         public static final String PROCESSING_THREADS_ENABLED = "__processing.threads.enabled__";
 
         public static boolean getProcessingThreadsEnabled(final Map<String, Object> configs) {
-            return InternalConfig.getBoolean(configs, InternalConfig.PROCESSING_THREADS_ENABLED, false);
+            return InternalConfig.getBoolean(configs, InternalConfig.PROCESSING_THREADS_ENABLED, getStateUpdaterEnabled(configs));
         }
 
         public static boolean getBoolean(final Map<String, Object> configs, final String key, final boolean defaultValue) {
