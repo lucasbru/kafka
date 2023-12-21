@@ -144,21 +144,35 @@ class KStreamKStreamJoin<K, V1, V2, VOut> implements ProcessorSupplier<K, V1, K,
             try (final WindowStoreIterator<V2> iter = otherWindowStore.fetch(record.key(), timeFrom, timeTo)) {
                 while (iter.hasNext()) {
                     needOuterJoin = false;
-                    final KeyValue<Long, V2> otherRecord = iter.next();
-                    final long otherRecordTimestamp = otherRecord.key;
+                    try {
+                        final KeyValue<Long, V2> otherRecord = iter.next();
 
-                    outerJoinStore.ifPresent(store -> {
-                        // use putIfAbsent to first read and see if there's any values for the key,
-                        // if yes delete the key, otherwise do not issue a put;
-                        // we may delete some values with the same key early but since we are going
-                        // range over all values of the same key even after failure, since the other window-store
-                        // is only cleaned up by stream time, so this is okay for at-least-once.
-                        store.putIfAbsent(TimestampedKeyAndJoinSide.make(!isLeftSide, record.key(), otherRecordTimestamp), null);
-                    });
+                        final long otherRecordTimestamp = otherRecord.key;
 
-                    context().forward(
-                        record.withValue(joiner.apply(record.key(), record.value(), otherRecord.value))
-                               .withTimestamp(Math.max(inputRecordTimestamp, otherRecordTimestamp)));
+                        outerJoinStore.ifPresent(store -> {
+                            // use putIfAbsent to first read and see if there's any values for the key,
+                            // if yes delete the key, otherwise do not issue a put;
+                            // we may delete some values with the same key early but since we are going
+                            // range over all values of the same key even after failure, since the other window-store
+                            // is only cleaned up by stream time, so this is okay for at-least-once.
+                            store.putIfAbsent(TimestampedKeyAndJoinSide.make(!isLeftSide, record.key(), otherRecordTimestamp), null);
+                        });
+
+                        context().forward(
+                                record.withValue(joiner.apply(record.key(), record.value(), otherRecord.value))
+                                        .withTimestamp(Math.max(inputRecordTimestamp, otherRecordTimestamp)));
+                    } catch (Throwable t) {
+                        LOG.warn("{}", outerJoinWindowName);
+                        LOG.warn("{}", otherWindowName);
+                        LOG.warn("{}", record.key());
+                        LOG.warn("{}", record.value());
+                        LOG.warn("{}", otherWindowStore.name());
+                        LOG.warn("{}", otherWindowStore.getClass().getName());
+                        LOG.warn("{}", iter.getClass().getName());
+                        LOG.warn("{}", timeFrom);
+                        LOG.warn("{}", timeTo);
+                        throw t;
+                    }
                 }
 
                 if (needOuterJoin) {
