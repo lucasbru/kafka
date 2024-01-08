@@ -216,7 +216,9 @@ class Tasks implements TasksRegistry {
     @Override
     public Set<Task> drainPendingTasksToInit() {
         final Set<Task> result = new HashSet<>(pendingTasksToInit);
-        log.info("drainPendingTasksToInit {}", result);
+        if (!pendingTasksToInit.isEmpty()) {
+            log.info("drainPendingTasksToInit {}", result);
+        }
         pendingTasksToInit.clear();
         return result;
     }
