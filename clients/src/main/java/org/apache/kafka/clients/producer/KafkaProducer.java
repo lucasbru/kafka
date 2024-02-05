@@ -1072,7 +1072,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             // for API exceptions return them in the future,
             // for other exceptions throw directly
         } catch (ApiException e) {
-            log.debug("Exception occurred during message send:", e);
+            log.info("Exception occurred during message send:", e);
             if (callback != null) {
                 TopicPartition tp = appendCallbacks.topicPartition();
                 RecordMetadata nullMetadata = new RecordMetadata(tp, -1, -1, RecordBatch.NO_TIMESTAMP, -1, -1);
