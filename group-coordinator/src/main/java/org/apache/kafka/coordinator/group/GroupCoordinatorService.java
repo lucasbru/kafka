@@ -1089,6 +1089,9 @@ public class GroupCoordinatorService implements GroupCoordinator {
     ) {
         ApiError apiError = ApiError.fromThrowable(exception);
 
+        log.warn("Operation {} with {} hit an exception: {}.",
+            operationName, operationInput, apiError.message(), exception);
+
         switch (apiError.error()) {
             case UNKNOWN_SERVER_ERROR:
                 log.error("Operation {} with {} hit an unexpected exception: {}.",

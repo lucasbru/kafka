@@ -1,0 +1,13 @@
+consumer_test:
+- tests/kafkatest/tests/client/consumer_test.py::AssignmentValidationTest.test_valid_assignment@{"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer","group_remote_assignor":"range"}
+- tests/kafkatest/tests/client/consumer_test.py::AssignmentValidationTest.test_valid_assignment@{"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer","group_remote_assignor":"uniform"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_broker_failure@{"clean_shutdown":false,"enable_autocommit":false,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_broker_failure@{"clean_shutdown":false,"enable_autocommit":true,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_broker_failure@{"clean_shutdown":true,"enable_autocommit":false,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_broker_failure@{"clean_shutdown":true,"enable_autocommit":true,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_broker_rolling_bounce@{"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_consumer_bounce@{"clean_shutdown":true,"bounce_mode":"all","metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_consumer_bounce@{"clean_shutdown":true,"bounce_mode":"rolling","metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_consumer_failure@{"clean_shutdown":true,"enable_autocommit":false,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_consumer_failure@{"clean_shutdown":true,"enable_autocommit":true,"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}
+- tests/kafkatest/tests/client/consumer_test.py::OffsetValidationTest.test_group_consumption@{"metadata_quorum":"ISOLATED_KRAFT","use_new_coordinator":true,"group_protocol":"consumer"}

@@ -560,6 +560,14 @@ class AssignmentValidationTest(VerifiableConsumerTest):
         for num_started, node in enumerate(consumer.nodes, 1):
             consumer.start_node(node)
             self.await_members(consumer, num_started)
+            def check():
+                print(consumer.current_assignment())
+                num_assigned=sum(1 for value in consumer.current_assignment().values() if value)
+                print(num_assigned)
+                return num_assigned == num_started
+            wait_until(check,
+               timeout_sec=self.session_timeout_sec*2,
+               err_msg="Consumers failed to receive their first assignment in a reasonable amount of time")
             assert self.valid_assignment(self.TOPIC, self.NUM_PARTITIONS, consumer.current_assignment()), \
                 "expected valid assignments of %d partitions when num_started %d: %s" % \
                 (self.NUM_PARTITIONS, num_started, \

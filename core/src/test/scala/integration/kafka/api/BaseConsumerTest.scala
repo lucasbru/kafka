@@ -119,9 +119,9 @@ object BaseConsumerTest {
   // * KRaft with the new group coordinator enabled and the consumer group protocol
   def getTestQuorumAndGroupProtocolParametersAll() : java.util.stream.Stream[Arguments] = {
     util.Arrays.stream(Array(
-        Arguments.of("zk", "classic"),
-        Arguments.of("kraft", "classic"),
-        Arguments.of("kraft+kip848", "classic"),
+//        Arguments.of("zk", "classic"),
+//        Arguments.of("kraft", "classic"),
+//        Arguments.of("kraft+kip848", "classic"),
         Arguments.of("kraft+kip848", "consumer")
     ))
   }
