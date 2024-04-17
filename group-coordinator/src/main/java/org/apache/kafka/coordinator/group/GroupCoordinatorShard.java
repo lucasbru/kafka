@@ -39,6 +39,8 @@ import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ShareGroupDescribeResponseData;
 import org.apache.kafka.common.message.ShareGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.ShareGroupHeartbeatResponseData;
+import org.apache.kafka.common.message.StreamsGroupDescribeResponseData;
+import org.apache.kafka.common.message.StreamsGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.SyncGroupRequestData;
 import org.apache.kafka.common.message.SyncGroupResponseData;
 import org.apache.kafka.common.message.TxnOffsetCommitRequestData;
@@ -86,8 +88,24 @@ import org.apache.kafka.coordinator.group.generated.ShareGroupTargetAssignmentMe
 import org.apache.kafka.coordinator.group.generated.ShareGroupTargetAssignmentMemberValue;
 import org.apache.kafka.coordinator.group.generated.ShareGroupTargetAssignmentMetadataKey;
 import org.apache.kafka.coordinator.group.generated.ShareGroupTargetAssignmentMetadataValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupCurrentMemberAssignmentKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupCurrentMemberAssignmentValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupMemberMetadataKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupMemberMetadataValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupMetadataKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupMetadataValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupPartitionMetadataKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupPartitionMetadataValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTargetAssignmentMemberKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTargetAssignmentMemberValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTargetAssignmentMetadataKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTargetAssignmentMetadataValue;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyKey;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyValue;
 import org.apache.kafka.coordinator.group.metrics.GroupCoordinatorMetrics;
 import org.apache.kafka.coordinator.group.metrics.GroupCoordinatorMetricsShard;
+import org.apache.kafka.coordinator.group.streams.StreamsGroupHeartbeatResult;
+import org.apache.kafka.coordinator.group.taskassignor.StickyTaskAssignor;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -96,11 +114,14 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
+import static org.apache.kafka.coordinator.group.Utils.messageOrNull;
 
 /**
  * The group coordinator shard is a replicated state machine that manages the metadata of all
@@ -112,7 +133,7 @@ import java.util.concurrent.TimeUnit;
  * 2) The replay methods which apply records to the hard state. Those are used in the request
  *    handling as well as during the initial loading of the records from the partitions.
  */
-@SuppressWarnings("ClassFanOutComplexity")
+@SuppressWarnings({"ClassFanOutComplexity", "CyclomaticComplexity"})
 public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord> {
 
     public static class Builder implements CoordinatorShardBuilder<GroupCoordinatorShard, CoordinatorRecord> {
@@ -220,6 +241,13 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
                 .withExecutor(executor)
                 .withConfig(config)
                 .withGroupConfigManager(groupConfigManager)
+                .withGroupCoordinatorMetricsShard(metricsShard)
+                // TODO: Do we need separate configs for streams groups?
+                .withStreamsGroupAssignors(Collections.singletonList(new StickyTaskAssignor()))
+                .withStreamsGroupNumStandbyReplicas(config.streamsGroupNumStandbyReplicas())
+                .withStreamsGroupMaxSize(config.consumerGroupMaxSize())
+                .withStreamsGroupSessionTimeout(config.streamsGroupSessionTimeoutMs())
+                .withStreamsGroupHeartbeatInterval(config.streamsGroupHeartbeatIntervalMs())
                 .withGroupCoordinatorMetricsShard(metricsShard)
                 .build();
 
@@ -347,6 +375,22 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
         ConsumerGroupHeartbeatRequestData request
     ) {
         return groupMetadataManager.consumerGroupHeartbeat(context, request);
+    }
+
+    /**
+     * Handles a StreamsGroupHeartbeat request.
+     *
+     * @param context The request context.
+     * @param request The actual StreamsGroupHeartbeat request.
+     *
+     * @return A Result containing the StreamsGroupHeartbeat response, a list of internal topics to be created and
+     *         a list of records to update the state machine.
+     */
+    public CoordinatorResult<StreamsGroupHeartbeatResult, CoordinatorRecord> streamsGroupHeartbeat(
+        RequestContext context,
+        StreamsGroupHeartbeatRequestData request
+    ) {
+        return groupMetadataManager.streamsGroupHeartbeat(context, request);
     }
 
     /**
@@ -575,6 +619,21 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
     }
 
     /**
+     * Handles a StreamsGroupDescribe request.
+     *
+     * @param groupIds      The IDs of the groups to describe.
+     *
+     * @return A list containing the StreamsGroupDescribeResponseData.DescribedGroup.
+     *
+     */
+    public List<StreamsGroupDescribeResponseData.DescribedGroup> streamsGroupDescribe(
+        List<String> groupIds,
+        long committedOffset
+    ) {
+        return groupMetadataManager.streamsGroupDescribe(groupIds, committedOffset);
+    }
+
+    /**
      * Handles a ShareGroupDescribe request.
      *
      * @param groupIds      The IDs of the groups to describe.
@@ -764,7 +823,7 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
      * @param record        The record to apply to the state machine.
      * @throws RuntimeException
      */
-    @SuppressWarnings({"CyclomaticComplexity"})
+    @SuppressWarnings({"CyclomaticComplexity", "MethodLength"})
     @Override
     public void replay(
         long offset,
@@ -782,56 +841,56 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
                     offset,
                     producerId,
                     (OffsetCommitKey) key.message(),
-                    (OffsetCommitValue) Utils.messageOrNull(value)
+                    (OffsetCommitValue) messageOrNull(value)
                 );
                 break;
 
             case 2:
                 groupMetadataManager.replay(
                     (GroupMetadataKey) key.message(),
-                    (GroupMetadataValue) Utils.messageOrNull(value)
+                    (GroupMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 3:
                 groupMetadataManager.replay(
                     (ConsumerGroupMetadataKey) key.message(),
-                    (ConsumerGroupMetadataValue) Utils.messageOrNull(value)
+                    (ConsumerGroupMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 4:
                 groupMetadataManager.replay(
                     (ConsumerGroupPartitionMetadataKey) key.message(),
-                    (ConsumerGroupPartitionMetadataValue) Utils.messageOrNull(value)
+                    (ConsumerGroupPartitionMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 5:
                 groupMetadataManager.replay(
                     (ConsumerGroupMemberMetadataKey) key.message(),
-                    (ConsumerGroupMemberMetadataValue) Utils.messageOrNull(value)
+                    (ConsumerGroupMemberMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 6:
                 groupMetadataManager.replay(
                     (ConsumerGroupTargetAssignmentMetadataKey) key.message(),
-                    (ConsumerGroupTargetAssignmentMetadataValue) Utils.messageOrNull(value)
+                    (ConsumerGroupTargetAssignmentMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 7:
                 groupMetadataManager.replay(
                     (ConsumerGroupTargetAssignmentMemberKey) key.message(),
-                    (ConsumerGroupTargetAssignmentMemberValue) Utils.messageOrNull(value)
+                    (ConsumerGroupTargetAssignmentMemberValue) messageOrNull(value)
                 );
                 break;
 
             case 8:
                 groupMetadataManager.replay(
                     (ConsumerGroupCurrentMemberAssignmentKey) key.message(),
-                    (ConsumerGroupCurrentMemberAssignmentValue) Utils.messageOrNull(value)
+                    (ConsumerGroupCurrentMemberAssignmentValue) messageOrNull(value)
                 );
                 break;
 
@@ -845,14 +904,14 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
             case 10:
                 groupMetadataManager.replay(
                     (ShareGroupMemberMetadataKey) key.message(),
-                    (ShareGroupMemberMetadataValue) Utils.messageOrNull(value)
+                    (ShareGroupMemberMetadataValue) messageOrNull(value)
                 );
                 break;
 
             case 11:
                 groupMetadataManager.replay(
                     (ShareGroupMetadataKey) key.message(),
-                    (ShareGroupMetadataValue) Utils.messageOrNull(value)
+                    (ShareGroupMetadataValue) messageOrNull(value)
                 );
                 break;
 
@@ -881,6 +940,55 @@ public class GroupCoordinatorShard implements CoordinatorShard<CoordinatorRecord
                 groupMetadataManager.replay(
                     (ConsumerGroupRegularExpressionKey) key.message(),
                     (ConsumerGroupRegularExpressionValue) Utils.messageOrNull(value)
+                );
+                break;
+
+            case 17:
+                groupMetadataManager.replay(
+                    (StreamsGroupMetadataKey) key.message(),
+                    (StreamsGroupMetadataValue) messageOrNull(value)
+                );
+                break;
+
+            case 18:
+                groupMetadataManager.replay(
+                    (StreamsGroupPartitionMetadataKey) key.message(),
+                    (StreamsGroupPartitionMetadataValue) messageOrNull(value)
+                );
+                break;
+
+            case 19:
+                groupMetadataManager.replay(
+                    (StreamsGroupMemberMetadataKey) key.message(),
+                    (StreamsGroupMemberMetadataValue) messageOrNull(value)
+                );
+                break;
+
+            case 20:
+                groupMetadataManager.replay(
+                    (StreamsGroupTargetAssignmentMetadataKey) key.message(),
+                    (StreamsGroupTargetAssignmentMetadataValue) messageOrNull(value)
+                );
+                break;
+
+            case 21:
+                groupMetadataManager.replay(
+                    (StreamsGroupTargetAssignmentMemberKey) key.message(),
+                    (StreamsGroupTargetAssignmentMemberValue) messageOrNull(value)
+                );
+                break;
+
+            case 22:
+                groupMetadataManager.replay(
+                    (StreamsGroupCurrentMemberAssignmentKey) key.message(),
+                    (StreamsGroupCurrentMemberAssignmentValue) messageOrNull(value)
+                );
+                break;
+
+            case 23:
+                groupMetadataManager.replay(
+                    (StreamsGroupTopologyKey) key.message(),
+                    (StreamsGroupTopologyValue) messageOrNull(value)
                 );
                 break;
 

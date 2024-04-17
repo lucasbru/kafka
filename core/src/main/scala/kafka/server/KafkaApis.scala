@@ -276,6 +276,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.WRITE_SHARE_GROUP_STATE => handleWriteShareGroupStateRequest(request)
         case ApiKeys.DELETE_SHARE_GROUP_STATE => handleDeleteShareGroupStateRequest(request)
         case ApiKeys.READ_SHARE_GROUP_STATE_SUMMARY => handleReadShareGroupStateSummaryRequest(request)
+        case ApiKeys.STREAMS_GROUP_DESCRIBE => handleStreamsGroupDescribe(request).exceptionally(handleError)
+        case ApiKeys.STREAMS_GROUP_HEARTBEAT => handleStreamsGroupHeartbeat(request).exceptionally(handleError)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -3899,6 +3901,159 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   }
 
+  private def isStreamsGroupProtocolEnabled(): Boolean = {
+    config.groupCoordinatorRebalanceProtocols.contains(Group.GroupType.STREAMS)
+  }
+
+  def handleStreamsGroupHeartbeat(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val streamsGroupHeartbeatRequest = request.body[StreamsGroupHeartbeatRequest]
+
+    if (!isStreamsGroupProtocolEnabled()) {
+      // The API is not supported by the "old" group coordinator (the default). If the
+      // new one is not enabled, we fail directly here.
+      requestHelper.sendMaybeThrottle(request, streamsGroupHeartbeatRequest.getErrorResponse(Errors.UNSUPPORTED_VERSION.exception))
+      CompletableFuture.completedFuture[Unit](())
+    } else if (!authHelper.authorize(request.context, READ, GROUP, streamsGroupHeartbeatRequest.data.groupId)) {
+      requestHelper.sendMaybeThrottle(request, streamsGroupHeartbeatRequest.getErrorResponse(Errors.GROUP_AUTHORIZATION_FAILED.exception))
+      CompletableFuture.completedFuture[Unit](())
+    } else {
+      val requestContext = request.context
+
+      if (streamsGroupHeartbeatRequest.data().topology() != null) {
+        val requiredTopics: Seq[String] =
+          streamsGroupHeartbeatRequest.data().topology().subtopologies().iterator().asScala.flatMap(subtopology =>
+            (subtopology.sourceTopics().iterator().asScala:Iterator[String])
+              ++ (subtopology.repartitionSinkTopics().iterator().asScala:Iterator[String])
+              ++ (subtopology.repartitionSourceTopics().iterator().asScala.map(_.name()):Iterator[String])
+              ++ (subtopology.stateChangelogTopics().iterator().asScala.map(_.name()):Iterator[String])
+          ).toSeq
+
+        // While correctness of the heartbeat request is checked inside the group coordinator,
+        // we are checking early that topics in the topology have valid names and are not internal
+        // kafka topics, since we need to pass it to the authorization helper before passing the
+        // request to the group coordinator.
+
+        val prohibitedTopics = requiredTopics.filter(Topic.isInternal)
+        if (prohibitedTopics.nonEmpty) {
+          val errorResponse = new StreamsGroupHeartbeatResponseData()
+          errorResponse.setErrorCode(Errors.STREAMS_INVALID_TOPOLOGY.code)
+          errorResponse.setErrorMessage(f"Use of Kafka internal topics ${prohibitedTopics.mkString(",")} in a Kafka Streams topology is prohibited.")
+          requestHelper.sendMaybeThrottle(request, new StreamsGroupHeartbeatResponse(errorResponse))
+          return CompletableFuture.completedFuture[Unit](())
+        }
+
+        val invalidTopics = requiredTopics.filterNot(Topic.isValid)
+        if (invalidTopics.nonEmpty) {
+          val errorResponse = new StreamsGroupHeartbeatResponseData()
+          errorResponse.setErrorCode(Errors.STREAMS_INVALID_TOPOLOGY.code)
+          errorResponse.setErrorMessage(f"Topic names ${invalidTopics.mkString(",")} are not valid topic names.")
+          requestHelper.sendMaybeThrottle(request, new StreamsGroupHeartbeatResponse(errorResponse))
+          return CompletableFuture.completedFuture[Unit](())
+        }
+
+        val (_, describeConfigsAuthorized) = authHelper.partitionSeqByAuthorized(request.context, DESCRIBE_CONFIGS, TOPIC, requiredTopics.toSeq)(identity[String])
+        if (describeConfigsAuthorized.nonEmpty) {
+          val errorResponse = new StreamsGroupHeartbeatResponseData()
+          errorResponse.setErrorCode(Errors.TOPIC_AUTHORIZATION_FAILED.code)
+          errorResponse.setErrorMessage(f"Unauthorized to DESCRIBE_CONFIGS on topics ${describeConfigsAuthorized.mkString(",")} are unauthorized.")
+          requestHelper.sendMaybeThrottle(request, new StreamsGroupHeartbeatResponse(errorResponse))
+          return CompletableFuture.completedFuture[Unit](())
+        }
+      }
+
+      groupCoordinator.streamsGroupHeartbeat(
+        request.context,
+        streamsGroupHeartbeatRequest.data,
+      ).handle[Unit] { (response, exception) =>
+        if (exception != null) {
+          requestHelper.sendMaybeThrottle(request, streamsGroupHeartbeatRequest.getErrorResponse(exception))
+        } else {
+          val responseData = response.responseData()
+          val topicsToCreate = response.creatableTopics().asScala
+          if (topicsToCreate.nonEmpty) {
+
+            val createTopicUnauthorized =
+              if(!authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false))
+                authHelper.partitionSeqByAuthorized(request.context, CREATE, TOPIC, topicsToCreate.keys.toSeq)(identity[String])._2
+              else Set.empty
+
+            if (createTopicUnauthorized.nonEmpty) {
+              if (responseData.status() == null) {
+                responseData.setStatus(new util.ArrayList());
+              }
+              responseData.status().add(
+                new StreamsGroupHeartbeatResponseData.Status()
+                  .setStatusCode(StreamsGroupHeartbeatResponse.Status.MISSING_INTERNAL_TOPICS.code())
+                  .setStatusDetail("Unauthorized to CREATE on topics " + createTopicUnauthorized.mkString(",") + ".")
+              )
+            } else {
+              autoTopicCreationManager.createStreamsInternalTopics(topicsToCreate, requestContext);
+            }
+          }
+
+          requestHelper.sendMaybeThrottle(request, new StreamsGroupHeartbeatResponse(responseData))
+        }
+      }
+    }
+  }
+
+  def handleStreamsGroupDescribe(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val streamsGroupDescribeRequest = request.body[StreamsGroupDescribeRequest]
+    val includeAuthorizedOperations = streamsGroupDescribeRequest.data.includeAuthorizedOperations
+
+    if (!isStreamsGroupProtocolEnabled()) {
+      // The API is not supported by the "old" group coordinator (the default). If the
+      // new one is not enabled, we fail directly here.
+      requestHelper.sendMaybeThrottle(request, request.body[StreamsGroupDescribeRequest].getErrorResponse(Errors.UNSUPPORTED_VERSION.exception))
+      CompletableFuture.completedFuture[Unit](())
+    } else {
+      val response = new StreamsGroupDescribeResponseData()
+
+      val authorizedGroups = new ArrayBuffer[String]()
+      streamsGroupDescribeRequest.data.groupIds.forEach { groupId =>
+        if (!authHelper.authorize(request.context, DESCRIBE, GROUP, groupId)) {
+          response.groups.add(new StreamsGroupDescribeResponseData.DescribedGroup()
+            .setGroupId(groupId)
+            .setErrorCode(Errors.GROUP_AUTHORIZATION_FAILED.code)
+          )
+        } else {
+          authorizedGroups += groupId
+        }
+      }
+
+      groupCoordinator.streamsGroupDescribe(
+        request.context,
+        authorizedGroups.asJava
+      ).handle[Unit] { (results, exception) =>
+        if (exception != null) {
+          requestHelper.sendMaybeThrottle(request, streamsGroupDescribeRequest.getErrorResponse(exception))
+        } else {
+          if (includeAuthorizedOperations) {
+            results.forEach { groupResult =>
+              if (groupResult.errorCode == Errors.NONE.code) {
+                groupResult.setAuthorizedOperations(authHelper.authorizedOperations(
+                  request,
+                  new Resource(ResourceType.GROUP, groupResult.groupId)
+                ))
+              }
+            }
+          }
+
+          if (response.groups.isEmpty) {
+            // If the response is empty, we can directly reuse the results.
+            response.setGroups(results)
+          } else {
+            // Otherwise, we have to copy the results into the existing ones.
+            response.groups.addAll(results)
+          }
+
+          requestHelper.sendMaybeThrottle(request, new StreamsGroupDescribeResponse(response))
+        }
+      }
+    }
+
+  }
+  
   def handleGetTelemetrySubscriptionsRequest(request: RequestChannel.Request): Unit = {
     val subscriptionRequest = request.body[GetTelemetrySubscriptionsRequest]
 

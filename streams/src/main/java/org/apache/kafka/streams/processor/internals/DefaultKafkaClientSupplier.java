@@ -18,7 +18,10 @@ package org.apache.kafka.streams.processor.internals;
 
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -26,6 +29,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.streams.KafkaClientSupplier;
 
 import java.util.Map;
+import java.util.Optional;
 
 public class DefaultKafkaClientSupplier implements KafkaClientSupplier {
     @Override
@@ -42,6 +46,14 @@ public class DefaultKafkaClientSupplier implements KafkaClientSupplier {
     @Override
     public Consumer<byte[], byte[]> getConsumer(final Map<String, Object> config) {
         return new KafkaConsumer<>(config, new ByteArrayDeserializer(), new ByteArrayDeserializer());
+    }
+
+    @Override
+    public Consumer<byte[], byte[]> getStreamsRebalanceProtocolConsumer(final Map<String, Object> config, final StreamsAssignmentInterface assignmentInterface) {
+        final ByteArrayDeserializer keyDeserializer = new ByteArrayDeserializer();
+        final ByteArrayDeserializer valueDeserializer = new ByteArrayDeserializer();
+        return new AsyncKafkaConsumer<>(new ConsumerConfig(ConsumerConfig.appendDeserializerToConfig(config, keyDeserializer, valueDeserializer)),
+            keyDeserializer, valueDeserializer, Optional.of(assignmentInterface));
     }
 
     @Override

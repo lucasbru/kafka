@@ -65,17 +65,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * This class contains helper methods to create records stored in
- * the __consumer_offsets topic.
+ * This class contains helper methods to create records stored in the __consumer_offsets topic.
  */
+@SuppressWarnings("ClassDataAbstractionCoupling")
 public class GroupCoordinatorRecordHelpers {
     private GroupCoordinatorRecordHelpers() {}
 
     /**
      * Creates a ConsumerGroupMemberMetadata record.
      *
-     * @param groupId   The consumer group id.
-     * @param member    The consumer group member.
+     * @param groupId The consumer group id.
+     * @param member  The consumer group member.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupMemberSubscriptionRecord(
@@ -110,8 +110,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupMemberMetadata tombstone.
      *
-     * @param groupId   The consumer group id.
-     * @param memberId  The consumer group member id.
+     * @param groupId  The consumer group id.
+     * @param memberId The consumer group member id.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupMemberSubscriptionTombstoneRecord(
@@ -132,8 +132,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupPartitionMetadata record.
      *
-     * @param groupId                   The consumer group id.
-     * @param newSubscriptionMetadata   The subscription metadata.
+     * @param groupId                 The consumer group id.
+     * @param newSubscriptionMetadata The subscription metadata.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupSubscriptionMetadataRecord(
@@ -165,7 +165,7 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupPartitionMetadata tombstone.
      *
-     * @param groupId   The consumer group id.
+     * @param groupId The consumer group id.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupSubscriptionMetadataTombstoneRecord(
@@ -209,7 +209,7 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupMetadata tombstone.
      *
-     * @param groupId   The consumer group id.
+     * @param groupId The consumer group id.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupEpochTombstoneRecord(
@@ -228,9 +228,9 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupTargetAssignmentMember record.
      *
-     * @param groupId       The consumer group id.
-     * @param memberId      The consumer group member id.
-     * @param partitions    The target partitions of the member.
+     * @param groupId    The consumer group id.
+     * @param memberId   The consumer group member id.
+     * @param partitions The target partitions of the member.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupTargetAssignmentRecord(
@@ -267,8 +267,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupTargetAssignmentMember tombstone.
      *
-     * @param groupId       The consumer group id.
-     * @param memberId      The consumer group member id.
+     * @param groupId  The consumer group id.
+     * @param memberId The consumer group member id.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupTargetAssignmentTombstoneRecord(
@@ -289,8 +289,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupTargetAssignmentMetadata record.
      *
-     * @param groupId           The consumer group id.
-     * @param assignmentEpoch   The consumer group epoch.
+     * @param groupId         The consumer group id.
+     * @param assignmentEpoch The consumer group epoch.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupTargetAssignmentEpochRecord(
@@ -314,7 +314,7 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupTargetAssignmentMetadata tombstone.
      *
-     * @param groupId   The consumer group id.
+     * @param groupId The consumer group id.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupTargetAssignmentEpochTombstoneRecord(
@@ -333,8 +333,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a ConsumerGroupCurrentMemberAssignment record.
      *
-     * @param groupId   The consumer group id.
-     * @param member    The consumer group member.
+     * @param groupId The consumer group id.
+     * @param member  The consumer group member.
      * @return The record.
      */
     public static CoordinatorRecord newConsumerGroupCurrentAssignmentRecord(
@@ -440,9 +440,9 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a GroupMetadata record.
      *
-     * @param group              The classic group.
-     * @param assignment         The classic group assignment.
-     * @param metadataVersion    The metadata version.
+     * @param group           The classic group.
+     * @param assignment      The classic group assignment.
+     * @param metadataVersion The metadata version.
      * @return The record.
      */
     public static CoordinatorRecord newGroupMetadataRecord(
@@ -498,7 +498,7 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates a GroupMetadata tombstone.
      *
-     * @param groupId  The group id.
+     * @param groupId The group id.
      * @return The record.
      */
     public static CoordinatorRecord newGroupMetadataTombstoneRecord(
@@ -517,8 +517,8 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates an empty GroupMetadata record.
      *
-     * @param group              The classic group.
-     * @param metadataVersion    The metadata version.
+     * @param group           The classic group.
+     * @param metadataVersion The metadata version.
      * @return The record.
      */
     public static CoordinatorRecord newEmptyGroupMetadataRecord(
@@ -587,9 +587,9 @@ public class GroupCoordinatorRecordHelpers {
     /**
      * Creates an OffsetCommit tombstone record.
      *
-     * @param groupId           The group id.
-     * @param topic             The topic name.
-     * @param partitionId       The partition id.
+     * @param groupId     The group id.
+     * @param topic       The topic name.
+     * @param partitionId The partition id.
      * @return The record.
      */
     public static CoordinatorRecord newOffsetCommitTombstoneRecord(

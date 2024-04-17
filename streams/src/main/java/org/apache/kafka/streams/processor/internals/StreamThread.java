@@ -26,10 +26,14 @@ import org.apache.kafka.clients.consumer.InvalidOffsetException;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.consumer.internals.AutoOffsetResetStrategy;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Subtopology;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.TimeoutException;
@@ -40,6 +44,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaClientSupplier;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.StreamsConfig.InternalConfig;
@@ -54,22 +59,26 @@ import org.apache.kafka.streams.processor.StandbyUpdateListener;
 import org.apache.kafka.streams.processor.StateRestoreListener;
 import org.apache.kafka.streams.processor.TaskId;
 import org.apache.kafka.streams.processor.assignment.ProcessId;
+import org.apache.kafka.streams.processor.internals.InternalTopologyBuilder.TopicsInfo;
 import org.apache.kafka.streams.processor.internals.assignment.AssignorError;
 import org.apache.kafka.streams.processor.internals.assignment.ReferenceContainer;
 import org.apache.kafka.streams.processor.internals.metrics.StreamsMetricsImpl;
 import org.apache.kafka.streams.processor.internals.metrics.ThreadMetrics;
 import org.apache.kafka.streams.processor.internals.tasks.DefaultTaskManager;
 import org.apache.kafka.streams.processor.internals.tasks.DefaultTaskManager.DefaultTaskExecutorCreator;
+import org.apache.kafka.streams.state.HostInfo;
 import org.apache.kafka.streams.state.internals.ThreadCache;
 
 import org.slf4j.Logger;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
@@ -80,12 +89,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.streams.internals.StreamsConfigUtils.eosEnabled;
 import static org.apache.kafka.streams.processor.internals.ClientUtils.adminClientId;
 import static org.apache.kafka.streams.processor.internals.ClientUtils.consumerClientId;
 import static org.apache.kafka.streams.processor.internals.ClientUtils.restoreConsumerClientId;
 
+@SuppressWarnings("ClassDataAbstractionCoupling")
 public class StreamThread extends Thread implements ProcessingThread {
 
     private static final String THREAD_ID_SUBSTRING = "-StreamThread-";
@@ -342,6 +353,10 @@ public class StreamThread extends Thread implements ProcessingThread {
     // handler for, eg MissingSourceTopicException with named topologies
     private final Queue<StreamsException> nonFatalExceptionsToHandle;
 
+    // These are used only with the Streams Rebalance Protocol client
+    private final Optional<StreamsAssignmentInterface> streamsAssignmentInterface;
+    private final StreamsMetadataState streamsMetadataState;
+
     // These are used to signal from outside the stream thread, but the variables themselves are internal to the thread
     private final AtomicLong cacheResizeSize = new AtomicLong(-1L);
     private final AtomicBoolean leaveGroupRequested = new AtomicBoolean(false);
@@ -477,7 +492,31 @@ public class StreamThread extends Thread implements ProcessingThread {
             consumerConfigs.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
         }
 
-        final Consumer<byte[], byte[]> mainConsumer = clientSupplier.getConsumer(consumerConfigs);
+        final Consumer<byte[], byte[]> mainConsumer;
+        final Optional<StreamsAssignmentInterface> streamsAssignmentInterface;
+        if (config.getString(StreamsConfig.GROUP_PROTOCOL_CONFIG).equalsIgnoreCase(GroupProtocol.STREAMS.name)) {
+            if (topologyMetadata.hasNamedTopologies()) {
+                throw new IllegalStateException("Named topologies and the CONSUMER protocol cannot be used at the same time.");
+            }
+            log.info("Streams rebalance protocol enabled");
+
+            streamsAssignmentInterface = Optional.of(
+                initAssignmentInterface(
+                    processId,
+                    config,
+                    parseHostInfo(config.getString(StreamsConfig.APPLICATION_SERVER_CONFIG)),
+                    topologyMetadata
+                )
+            );
+            mainConsumer = clientSupplier.getStreamsRebalanceProtocolConsumer(
+                consumerConfigs,
+                streamsAssignmentInterface.get()
+            );
+        } else {
+            mainConsumer = clientSupplier.getConsumer(consumerConfigs);
+            streamsAssignmentInterface = Optional.empty();
+        }
+
         taskManager.setMainConsumer(mainConsumer);
         referenceContainer.mainConsumer = mainConsumer;
 
@@ -503,10 +542,90 @@ public class StreamThread extends Thread implements ProcessingThread {
             referenceContainer.nonFatalExceptionsToHandle,
             shutdownErrorHook,
             streamsUncaughtExceptionHandler,
-            cache::resize
-        );
+            cache::resize,
+            streamsAssignmentInterface,
+            referenceContainer.streamsMetadataState);
 
         return streamThread.updateThreadMetadata(adminClientId(clientId));
+    }
+
+    private static Optional<StreamsAssignmentInterface.HostInfo> parseHostInfo(final String endpoint) {
+        final HostInfo hostInfo = HostInfo.buildFromEndpoint(endpoint);
+        if (hostInfo == null) {
+            return Optional.empty();
+        } else {
+            return Optional.of(new StreamsAssignmentInterface.HostInfo(hostInfo.host(), hostInfo.port()));
+        }
+    }
+
+    private static StreamsAssignmentInterface initAssignmentInterface(final UUID processId,
+                                                                      final StreamsConfig config,
+                                                                      final Optional<StreamsAssignmentInterface.HostInfo> endpoint,
+                                                                      final TopologyMetadata topologyMetadata) {
+        final InternalTopologyBuilder internalTopologyBuilder = topologyMetadata.lookupBuilderForNamedTopology(null);
+
+        final Map<String, Subtopology> subtopologyMap = initBrokerTopology(config, internalTopologyBuilder);
+
+        return new StreamsAssignmentInterface(
+            processId,
+            endpoint,
+            subtopologyMap,
+            config.getClientTags()
+        );
+    }
+
+    private static Map<String, Subtopology> initBrokerTopology(final StreamsConfig config, final InternalTopologyBuilder internalTopologyBuilder) {
+        final Map<String, String> defaultTopicConfigs = new HashMap<>();
+        for (final Map.Entry<String, Object> entry : config.originalsWithPrefix(StreamsConfig.TOPIC_PREFIX).entrySet()) {
+            if (entry.getValue() != null) {
+                defaultTopicConfigs.put(entry.getKey(), entry.getValue().toString());
+            }
+        }
+        final long windowChangeLogAdditionalRetention = config.getLong(StreamsConfig.WINDOW_STORE_CHANGE_LOG_ADDITIONAL_RETENTION_MS_CONFIG);
+
+        final Map<String, Subtopology> subtopologyMap = new HashMap<>();
+        final Collection<Set<String>> copartitionGroups = internalTopologyBuilder.copartitionGroups();
+
+        for (final Map.Entry<TopologyMetadata.Subtopology, TopicsInfo> topicsInfoEntry : internalTopologyBuilder.subtopologyToTopicsInfo()
+            .entrySet()) {
+
+            final HashSet<String> allSourceTopics = new HashSet<>(
+                topicsInfoEntry.getValue().sourceTopics);
+            topicsInfoEntry.getValue().repartitionSourceTopics.forEach(
+                (repartitionSourceTopic, repartitionTopicInfo) -> {
+                    allSourceTopics.add(repartitionSourceTopic);
+                });
+
+            subtopologyMap.put(
+                String.valueOf(topicsInfoEntry.getKey().nodeGroupId),
+                new Subtopology(
+                    topicsInfoEntry.getValue().sourceTopics,
+                    topicsInfoEntry.getValue().sinkTopics,
+                    topicsInfoEntry.getValue().repartitionSourceTopics.entrySet()
+                        .stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey, e ->
+                            new StreamsAssignmentInterface.TopicInfo(e.getValue().numberOfPartitions(),
+                                Optional.of(config.getInt(StreamsConfig.REPLICATION_FACTOR_CONFIG).shortValue()),
+                                e.getValue().properties(defaultTopicConfigs, windowChangeLogAdditionalRetention)))),
+                    topicsInfoEntry.getValue().stateChangelogTopics.entrySet()
+                        .stream()
+                        .collect(Collectors.toMap(Map.Entry::getKey, e ->
+                            new StreamsAssignmentInterface.TopicInfo(e.getValue().numberOfPartitions(),
+                                Optional.of(config.getInt(StreamsConfig.REPLICATION_FACTOR_CONFIG).shortValue()),
+                                e.getValue().properties(defaultTopicConfigs, windowChangeLogAdditionalRetention)))),
+                    copartitionGroups.stream().filter(allSourceTopics::containsAll).collect(
+                        Collectors.toList())
+                )
+            );
+        }
+
+        if (subtopologyMap.values().stream().mapToInt(x -> x.copartitionGroups.size()).sum()
+            != copartitionGroups.size()) {
+            throw new IllegalStateException(
+                "Not all copartition groups were converted to broker topology");
+        }
+
+        return subtopologyMap;
     }
 
     private static DefaultTaskManager maybeCreateSchedulingTaskManager(final boolean processingThreadsEnabled,
@@ -580,8 +699,9 @@ public class StreamThread extends Thread implements ProcessingThread {
                         final Queue<StreamsException> nonFatalExceptionsToHandle,
                         final Runnable shutdownErrorHook,
                         final BiConsumer<Throwable, Boolean> streamsUncaughtExceptionHandler,
-                        final java.util.function.Consumer<Long> cacheResizer
-                        ) {
+                        final java.util.function.Consumer<Long> cacheResizer,
+                        final Optional<StreamsAssignmentInterface> streamsAssignmentInterface,
+                        final StreamsMetadataState streamsMetadataState) {
         super(threadId);
         this.stateLock = new Object();
         this.adminClient = adminClient;
@@ -602,6 +722,13 @@ public class StreamThread extends Thread implements ProcessingThread {
         this.shutdownErrorHook = shutdownErrorHook;
         this.streamsUncaughtExceptionHandler = streamsUncaughtExceptionHandler;
         this.cacheResizer = cacheResizer;
+        this.streamsAssignmentInterface = streamsAssignmentInterface;
+        streamsAssignmentInterface.ifPresent(assignmentInterface -> {
+            assignmentInterface.setOnTasksRevokedCallback(this::onTasksRevoked);
+            assignmentInterface.setOnTasksAssignedCallback(this::onTasksAssigned);
+            assignmentInterface.setOnAllTasksLostCallback(this::onAllTasksLost);
+        });
+        this.streamsMetadataState = streamsMetadataState;
 
         // The following sensors are created here but their references are not stored in this object, since within
         // this object they are not recorded. The sensors are created here so that the stream threads starts with all
@@ -957,6 +1084,8 @@ public class StreamThread extends Thread implements ProcessingThread {
         final long startMs = time.milliseconds();
         now = startMs;
 
+        maybeHandleAssignmentFromStreamsRebalanceProtocol();
+
         final long pollLatency;
         taskManager.resumePollingForPartitionsWithAvailableSpace();
         pollLatency = pollPhase();
@@ -1266,6 +1395,124 @@ public class StreamThread extends Thread implements ProcessingThread {
             streamsUncaughtExceptionHandler.accept(nonFatalExceptionsToHandle.poll(), true);
         }
         return pollLatency;
+    }
+
+    public void maybeHandleAssignmentFromStreamsRebalanceProtocol() {
+        if (streamsAssignmentInterface.isPresent()) {
+
+            if (streamsAssignmentInterface.get().shutdownRequested()) {
+                assignmentErrorCode.set(AssignorError.SHUTDOWN_REQUESTED.code());
+            }
+
+            // Process metadata from Streams Rebalance Protocol
+            final Map<StreamsAssignmentInterface.HostInfo, List<TopicPartition>> partitionsByEndpoint =
+                streamsAssignmentInterface.get().partitionsByHost.get();
+            final Map<HostInfo, Set<TopicPartition>> convertedHostInfoMap = new HashMap<>();
+            partitionsByEndpoint.forEach((hostInfo, topicPartitions) ->
+                convertedHostInfoMap.put(new HostInfo(hostInfo.host, hostInfo.port), new HashSet<>(topicPartitions)));
+            streamsMetadataState.onChange(
+                convertedHostInfoMap,
+                Collections.emptyMap(), // TODO: We cannot differentiate between standby and active tasks here?!
+                getTopicPartitionInfo(convertedHostInfoMap)
+            );
+
+            // Process assignment from Streams Rebalance Protocol
+            streamsAssignmentInterface.get().processStreamsRebalanceEvents();
+        }
+    }
+
+    private Optional<Exception> onTasksRevoked(final Set<StreamsAssignmentInterface.TaskId> activeTasksToRevoke) {
+        try {
+            final Map<TaskId, Set<TopicPartition>> activeTasksToRevokeWithPartitions =
+                pairWithTopicPartitions(activeTasksToRevoke.stream());
+            final Set<TopicPartition> partitionsToRevoke = activeTasksToRevokeWithPartitions.values().stream()
+                .flatMap(Collection::stream)
+                .collect(Collectors.toSet());
+
+            final long start = time.milliseconds();
+            try {
+                log.info("Revoking active tasks {}.", activeTasksToRevoke);
+                taskManager.handleRevocation(partitionsToRevoke);
+            } finally {
+                log.info("partition revocation took {} ms.", time.milliseconds() - start);
+            }
+            if (state() != State.PENDING_SHUTDOWN) {
+                setState(State.PARTITIONS_REVOKED);
+            }
+        } catch (final Exception exception) {
+            return Optional.of(exception);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Exception> onTasksAssigned(final StreamsAssignmentInterface.Assignment assignment) {
+        try {
+            final Map<TaskId, Set<TopicPartition>> activeTasksWithPartitions =
+                pairWithTopicPartitions(assignment.activeTasks.stream());
+            final Map<TaskId, Set<TopicPartition>> standbyTasksWithPartitions =
+                pairWithTopicPartitions(Stream.concat(assignment.standbyTasks.stream(), assignment.warmupTasks.stream()));
+
+            log.info("Processing new assignment {} from Streams Rebalance Protocol", assignment);
+
+            taskManager.handleAssignment(activeTasksWithPartitions, standbyTasksWithPartitions);
+            setState(State.PARTITIONS_ASSIGNED);
+            taskManager.handleRebalanceComplete();
+        } catch (final Exception exception) {
+            return Optional.of(exception);
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Exception> onAllTasksLost() {
+        try {
+            taskManager.handleLostAll();
+        } catch (final Exception exception) {
+            return Optional.of(exception);
+        }
+        return Optional.empty();
+    }
+
+    static Map<TopicPartition, PartitionInfo> getTopicPartitionInfo(final Map<HostInfo, Set<TopicPartition>> partitionsByHost) {
+        final Map<TopicPartition, PartitionInfo> topicToPartitionInfo = new HashMap<>();
+        for (final Set<TopicPartition> value : partitionsByHost.values()) {
+            for (final TopicPartition topicPartition : value) {
+                topicToPartitionInfo.put(
+                    topicPartition,
+                    new PartitionInfo(
+                        topicPartition.topic(),
+                        topicPartition.partition(),
+                        null,
+                        new Node[0],
+                        new Node[0]
+                    )
+                );
+            }
+        }
+        return topicToPartitionInfo;
+    }
+
+
+    private Map<TaskId, Set<TopicPartition>> pairWithTopicPartitions(final Stream<StreamsAssignmentInterface.TaskId> taskIdStream) {
+        return taskIdStream
+            .collect(Collectors.toMap(
+                this::toTaskId,
+                task -> toTopicPartitions(task, streamsAssignmentInterface.get().subtopologyMap().get(task.subtopologyId()))
+            ));
+    }
+
+    private TaskId toTaskId(final StreamsAssignmentInterface.TaskId task) {
+        return new TaskId(Integer.parseInt(task.subtopologyId()), task.partitionId());
+    }
+
+    private Set<TopicPartition> toTopicPartitions(final StreamsAssignmentInterface.TaskId task,
+                                                  final Subtopology subTopology) {
+        return
+            Stream.concat(
+                subTopology.sourceTopics.stream(),
+                subTopology.repartitionSourceTopics.keySet().stream()
+            )
+            .map(t -> new TopicPartition(t, task.partitionId()))
+            .collect(Collectors.toSet());
     }
 
     /**

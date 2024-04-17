@@ -25,12 +25,15 @@ import org.apache.kafka.clients.consumer.internals.CommitRequestManager;
 import org.apache.kafka.clients.consumer.internals.ConsumerHeartbeatRequestManager;
 import org.apache.kafka.clients.consumer.internals.ConsumerMembershipManager;
 import org.apache.kafka.clients.consumer.internals.ConsumerMetadata;
+import org.apache.kafka.clients.consumer.internals.ConsumerUtils;
 import org.apache.kafka.clients.consumer.internals.CoordinatorRequestManager;
 import org.apache.kafka.clients.consumer.internals.FetchRequestManager;
 import org.apache.kafka.clients.consumer.internals.MockRebalanceListener;
 import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate;
 import org.apache.kafka.clients.consumer.internals.OffsetsRequestManager;
 import org.apache.kafka.clients.consumer.internals.RequestManagers;
+import org.apache.kafka.clients.consumer.internals.StreamsGroupHeartbeatRequestManager;
+import org.apache.kafka.clients.consumer.internals.StreamsMembershipManager;
 import org.apache.kafka.clients.consumer.internals.SubscriptionState;
 import org.apache.kafka.clients.consumer.internals.TopicMetadataRequestManager;
 import org.apache.kafka.common.Cluster;
@@ -61,8 +64,10 @@ import static org.apache.kafka.clients.consumer.internals.events.CompletableEven
 import static org.apache.kafka.test.TestUtils.assertFutureThrows;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -82,6 +87,8 @@ public class ApplicationEventProcessorTest {
     private final CommitRequestManager commitRequestManager = mock(CommitRequestManager.class);
     private final ConsumerHeartbeatRequestManager heartbeatRequestManager = mock(ConsumerHeartbeatRequestManager.class);
     private final ConsumerMembershipManager membershipManager = mock(ConsumerMembershipManager.class);
+    private final StreamsGroupHeartbeatRequestManager streamsGroupHeartbeatRequestManager = mock(StreamsGroupHeartbeatRequestManager.class);
+    private final StreamsMembershipManager streamsMembershipManager = mock(StreamsMembershipManager.class);
     private final OffsetsRequestManager offsetsRequestManager = mock(OffsetsRequestManager.class);
     private SubscriptionState subscriptionState = mock(SubscriptionState.class);
     private final ConsumerMetadata metadata = mock(ConsumerMetadata.class);
@@ -96,7 +103,33 @@ public class ApplicationEventProcessorTest {
                 withGroupId ? Optional.of(mock(CoordinatorRequestManager.class)) : Optional.empty(),
                 withGroupId ? Optional.of(commitRequestManager) : Optional.empty(),
                 withGroupId ? Optional.of(heartbeatRequestManager) : Optional.empty(),
-                withGroupId ? Optional.of(membershipManager) : Optional.empty());
+                withGroupId ? Optional.of(membershipManager) : Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+
+        processor = new ApplicationEventProcessor(
+                new LogContext(),
+                requestManagers,
+                metadata,
+                subscriptionState
+        );
+    }
+
+    private void setupProcessorWithStreamsMembershipManager() {
+        RequestManagers requestManagers = new RequestManagers(
+                new LogContext(),
+                offsetsRequestManager,
+                mock(TopicMetadataRequestManager.class),
+                mock(FetchRequestManager.class),
+                Optional.of(mock(CoordinatorRequestManager.class)),
+                Optional.of(commitRequestManager),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.of(streamsGroupHeartbeatRequestManager),
+                Optional.of(streamsMembershipManager)
+        );
+
         processor = new ApplicationEventProcessor(
                 new LogContext(),
                 requestManagers,
@@ -121,6 +154,15 @@ public class ApplicationEventProcessorTest {
         when(membershipManager.leaveGroup()).thenReturn(CompletableFuture.completedFuture(null));
         processor.process(new UnsubscribeEvent(0));
         verify(membershipManager).leaveGroup();
+    }
+
+    @Test
+    public void testProcessUnsubscribeEventWithStreamsMembershipManager() {
+        setupProcessorWithStreamsMembershipManager();
+        when(heartbeatRequestManager.membershipManager()).thenReturn(membershipManager);
+        when(streamsMembershipManager.leaveGroup()).thenReturn(CompletableFuture.completedFuture(null));
+        processor.process(new UnsubscribeEvent(0));
+        verify(streamsMembershipManager).leaveGroup();
     }
 
     @Test
@@ -521,6 +563,118 @@ public class ApplicationEventProcessorTest {
             Arguments.of(Optional.empty()),
             Arguments.of(Optional.of(Map.of(new TopicPartition("topic", 0), new OffsetAndMetadata(10, Optional.of(1), ""))))
         );
+    }
+
+    @Test
+    public void testSubscriptionChangeEventWithStreamsMembershipManager() {
+        Set<String> topics = Set.of("topic1", "topic2");
+        Optional<ConsumerRebalanceListener> listener = Optional.of(new MockRebalanceListener());
+        TopicSubscriptionChangeEvent event = new TopicSubscriptionChangeEvent(topics, listener, 12345);
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verify(streamsMembershipManager).onSubscriptionUpdated();
+        // verify member state doesn't transition to JOINING.
+        verify(streamsMembershipManager, never()).onConsumerPoll();
+    }
+
+    @Test
+    public void testOnTasksRevokedCallbackExecuted() {
+        StreamsOnTasksRevokedCallbackCompletedEvent event = new StreamsOnTasksRevokedCallbackCompletedEvent(
+            new CompletableFuture<>(),
+            Optional.empty()
+        );
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verify(streamsMembershipManager).onTasksRevokedCallbackCompleted(event);
+    }
+
+    @Test
+    public void testOnTasksAssignedCallbackExecuted() {
+        StreamsOnTasksAssignedCallbackCompletedEvent event = new StreamsOnTasksAssignedCallbackCompletedEvent(
+            new CompletableFuture<>(),
+            Optional.empty()
+        );
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verify(streamsMembershipManager).onTasksAssignedCallbackCompleted(event);
+    }
+
+    @Test
+    public void testOnAllTasksLostCallbackExecuted() {
+        StreamsOnAllTasksLostCallbackCompletedEvent event = new StreamsOnAllTasksLostCallbackCompletedEvent(
+            new CompletableFuture<>(),
+            Optional.empty()
+        );
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verify(streamsMembershipManager).onAllTasksLostCallbackCompleted(event);
+    }
+
+
+    @Test
+    public void testLeaveOnCloseWithStreamsMembershipManager() {
+        LeaveGroupOnCloseEvent event = new LeaveGroupOnCloseEvent(ConsumerUtils.DEFAULT_CLOSE_TIMEOUT_MS);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        when(streamsMembershipManager.leaveGroupOnClose()).thenReturn(future);
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verifyLeaveOnClose(event, future);
+    }
+
+    @Test
+    public void testLeaveOnCloseCompletesExceptionallyWithStreamsMembershipManager() {
+        LeaveGroupOnCloseEvent event = new LeaveGroupOnCloseEvent(ConsumerUtils.DEFAULT_CLOSE_TIMEOUT_MS);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        when(streamsMembershipManager.leaveGroupOnClose()).thenReturn(future);
+
+        setupProcessorWithStreamsMembershipManager();
+        processor.process(event);
+        verifyLeaveOnCloseCompletesExceptionally(event, future);
+    }
+
+    @Test
+    public void testLeaveOnCloseWithConsumerMembershipManager() {
+        LeaveGroupOnCloseEvent event = new LeaveGroupOnCloseEvent(ConsumerUtils.DEFAULT_CLOSE_TIMEOUT_MS);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        when(membershipManager.leaveGroupOnClose()).thenReturn(future);
+
+        setupProcessor(true);
+        processor.process(event);
+        verifyLeaveOnClose(event, future);
+    }
+
+    @Test
+    public void testLeaveOnCloseCompletesExceptionallyWithConsumerMembershipManager() {
+        LeaveGroupOnCloseEvent event = new LeaveGroupOnCloseEvent(ConsumerUtils.DEFAULT_CLOSE_TIMEOUT_MS);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        when(membershipManager.leaveGroupOnClose()).thenReturn(future);
+
+        setupProcessor(true);
+        processor.process(event);
+        verifyLeaveOnCloseCompletesExceptionally(event, future);
+    }
+
+    private void verifyLeaveOnClose(LeaveGroupOnCloseEvent event, CompletableFuture<Void> future) {
+        assertFalse(event.future().isDone());
+        future.complete(null);
+        assertTrue(event.future().isDone());
+        assertFalse(event.future().isCompletedExceptionally());
+    }
+
+    private void verifyLeaveOnCloseCompletesExceptionally(LeaveGroupOnCloseEvent event, CompletableFuture<Void> future) {
+        assertFalse(event.future().isDone());
+        RuntimeException exception = new RuntimeException("Nobody expects the Spanish Inquisition!");
+        future.completeExceptionally(exception);
+        assertTrue(event.future().isDone());
+        assertTrue(event.future().isCompletedExceptionally());
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> event.future().get());
+        assertInstanceOf(RuntimeException.class, thrown.getCause());
+        assertEquals(exception.getMessage(), thrown.getCause().getMessage());
     }
 
     private List<NetworkClientDelegate.UnsentRequest> mockCommitResults() {

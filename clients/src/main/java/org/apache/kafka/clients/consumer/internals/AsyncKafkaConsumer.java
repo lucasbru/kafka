@@ -160,6 +160,7 @@ import static org.apache.kafka.common.utils.Utils.swallow;
  * This class should not be invoked directly; users should instead create a {@link KafkaConsumer} as before.
  * This consumer implements the new consumer group protocol and is intended to be the default in coming releases.
  */
+@SuppressWarnings("this-escape")
 public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
 
     private static final long NO_CURRENT_THREAD = -1L;
@@ -277,9 +278,10 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
         }
     };
 
-    AsyncKafkaConsumer(final ConsumerConfig config,
-                       final Deserializer<K> keyDeserializer,
-                       final Deserializer<V> valueDeserializer) {
+    public AsyncKafkaConsumer(final ConsumerConfig config,
+                              final Deserializer<K> keyDeserializer,
+                              final Deserializer<V> valueDeserializer,
+                              final Optional<StreamsAssignmentInterface> streamsAssignmentInterface) {
         this(
             config,
             keyDeserializer,
@@ -289,7 +291,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
             CompletableEventReaper::new,
             FetchCollector::new,
             ConsumerMetadata::new,
-            new LinkedBlockingQueue<>()
+            new LinkedBlockingQueue<>(),
+            streamsAssignmentInterface
         );
     }
 
@@ -302,7 +305,9 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                        final CompletableEventReaperFactory backgroundEventReaperFactory,
                        final FetchCollectorFactory<K, V> fetchCollectorFactory,
                        final ConsumerMetadataFactory metadataFactory,
-                       final LinkedBlockingQueue<BackgroundEvent> backgroundEventQueue) {
+                       final LinkedBlockingQueue<BackgroundEvent> backgroundEventQueue,
+                       final Optional<StreamsAssignmentInterface> streamsAssignmentInterface
+                       ) {
         try {
             GroupRebalanceConfig groupRebalanceConfig = new GroupRebalanceConfig(
                 config,
@@ -377,7 +382,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                     clientTelemetryReporter,
                     metrics,
                     offsetCommitCallbackInvoker,
-                    memberStateListener
+                    memberStateListener,
+                    streamsAssignmentInterface
             );
             final Supplier<ApplicationEventProcessor> applicationEventProcessorSupplier = ApplicationEventProcessor.supplier(logContext,
                     metadata,
@@ -391,9 +397,10 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                     applicationEventProcessorSupplier,
                     networkClientDelegateSupplier,
                     requestManagersSupplier,
-                    kafkaConsumerMetrics
+                    kafkaConsumerMetrics);
+            streamsAssignmentInterface.ifPresent(
+                sai -> sai.setApplicationEventHandler(applicationEventHandler)
             );
-
             this.rebalanceListenerInvoker = new ConsumerRebalanceListenerInvoker(
                     logContext,
                     subscriptions,
@@ -560,7 +567,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
             clientTelemetryReporter,
             metrics,
             offsetCommitCallbackInvoker,
-            memberStateListener
+            this::updateGroupMetadata,
+            Optional.empty()
         );
         Supplier<ApplicationEventProcessor> applicationEventProcessorSupplier = ApplicationEventProcessor.supplier(
                 logContext,
