@@ -279,9 +279,11 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
     private final AtomicLong currentThread = new AtomicLong(NO_CURRENT_THREAD);
     private final AtomicInteger refCount = new AtomicInteger(0);
 
-    AsyncKafkaConsumer(final ConsumerConfig config,
+    public AsyncKafkaConsumer(final ConsumerConfig config,
                        final Deserializer<K> keyDeserializer,
-                       final Deserializer<V> valueDeserializer) {
+                       final Deserializer<V> valueDeserializer,
+                       Optional<StreamsAssignmentInterface> streamsAssignmentInterface
+                       ) {
         this(
             config,
             keyDeserializer,
@@ -290,7 +292,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
             ApplicationEventHandler::new,
             FetchCollector::new,
             ConsumerMetadata::new,
-            new LinkedBlockingQueue<>()
+            new LinkedBlockingQueue<>(),
+            streamsAssignmentInterface
         );
     }
 
@@ -302,7 +305,9 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                        final ApplicationEventHandlerFactory applicationEventHandlerFactory,
                        final FetchCollectorFactory<K, V> fetchCollectorFactory,
                        final ConsumerMetadataFactory metadataFactory,
-                       final LinkedBlockingQueue<BackgroundEvent> backgroundEventQueue) {
+                       final LinkedBlockingQueue<BackgroundEvent> backgroundEventQueue,
+                       final Optional<StreamsAssignmentInterface> streamsAssignmentInterface
+                       ) {
         try {
             GroupRebalanceConfig groupRebalanceConfig = new GroupRebalanceConfig(
                 config,
@@ -371,7 +376,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                     clientTelemetryReporter,
                     metrics,
                     offsetCommitCallbackInvoker,
-                    this::updateGroupMetadata
+                    this::updateGroupMetadata,
+                    streamsAssignmentInterface
             );
             final Supplier<ApplicationEventProcessor> applicationEventProcessorSupplier = ApplicationEventProcessor.supplier(logContext,
                     metadata,
@@ -487,7 +493,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                        KafkaClient client,
                        SubscriptionState subscriptions,
                        ConsumerMetadata metadata,
-                       List<ConsumerPartitionAssignor> assignors) {
+                       List<ConsumerPartitionAssignor> assignors,
+                       Optional<StreamsAssignmentInterface> streamsInstanceMetadata) {
         this.log = logContext.logger(getClass());
         this.subscriptions = subscriptions;
         this.clientId = config.getString(ConsumerConfig.CLIENT_ID_CONFIG);
@@ -558,7 +565,8 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
             clientTelemetryReporter,
             metrics,
             offsetCommitCallbackInvoker,
-            this::updateGroupMetadata
+            this::updateGroupMetadata,
+            streamsInstanceMetadata
         );
         Supplier<ApplicationEventProcessor> applicationEventProcessorSupplier = ApplicationEventProcessor.supplier(
                 logContext,
