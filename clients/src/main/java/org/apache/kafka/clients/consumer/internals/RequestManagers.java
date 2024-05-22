@@ -233,7 +233,9 @@ public class RequestManagers implements Closeable {
                             membershipManager,
                             backgroundEventHandler,
                             metrics,
-                            streamsInstanceMetadata.get());
+                            streamsInstanceMetadata.get(),
+                            metadata
+                            );
                     } else {
                         heartbeatRequestManager = new HeartbeatRequestManager(
                             logContext,

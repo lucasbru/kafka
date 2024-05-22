@@ -18,11 +18,11 @@ package org.apache.kafka.clients.consumer.internals;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollResult;
 import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Assignment;
 import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
 import org.apache.kafka.clients.consumer.internals.events.ErrorEvent;
 import org.apache.kafka.clients.consumer.internals.metrics.HeartbeatMetricsManager;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
 import org.apache.kafka.common.errors.RetriableException;
@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,59 +53,29 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
 
     private final Logger logger;
 
-    /**
-     * CoordinatorRequestManager manages the connection to the group coordinator
-     */
     private final CoordinatorRequestManager coordinatorRequestManager;
 
-    /**
-     * HeartbeatRequestState manages heartbeat request timing and retries
-     */
     private final StreamsHeartbeatRequestManager.HeartbeatRequestState heartbeatRequestState;
 
-    /*
-     * HeartbeatState manages building the heartbeat requests correctly
-     */
     private final StreamsHeartbeatRequestManager.HeartbeatState heartbeatState;
 
-    /**
-     * MembershipManager manages member's essential attributes like epoch and id, and its rebalance state
-     */
     private final MembershipManager membershipManager;
 
     private final StreamsPrepareAssignmentRequestManager streamsPrepareAssignmentRequestManager;
 
     private final StreamsInitializeRequestManager streamsInitializeRequestManager;
 
-    /**
-     * ErrorEventHandler allows the background thread to propagate errors back to the user
-     */
     private final BackgroundEventHandler backgroundEventHandler;
 
-    /**
-     * Timer for tracking the time since the last consumer poll.  If the timer expires, the consumer will stop
-     * sending heartbeat until the next poll.
-     */
     private final Timer pollTimer;
 
-    /**
-     * Holding the heartbeat sensor to measure heartbeat timing and response latency
-     */
     private final HeartbeatMetricsManager metricsManager;
 
-    /*
-     * StreamsGroupMetadata holds the metadata for the streams group
-     */
     private StreamsAssignmentInterface streamsInterface;
 
-    /**
-     * Local cache of assigned topic IDs and names. Topics are added here when received in a
-     * target assignment, as we discover their names in the Metadata cache, and removed when the
-     * topic is not in the subscription anymore. The purpose of this cache is to avoid metadata
-     * requests in cases where a currently assigned topic is in the target assignment (new
-     * partition assigned, or revoked), but it is not present the Metadata cache at that moment.
-     */
     private final Map<String, Uuid> assignedTopicIdCache;
+
+    private final ConsumerMetadata metadata;
 
     public StreamsHeartbeatRequestManager(
         final LogContext logContext,
@@ -116,7 +87,8 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         final MembershipManager membershipManager,
         final BackgroundEventHandler backgroundEventHandler,
         final Metrics metrics,
-        final StreamsAssignmentInterface streamsAssignmentInterface
+        final StreamsAssignmentInterface streamsAssignmentInterface,
+        final ConsumerMetadata metadata
     ) {
         this.coordinatorRequestManager = coordinatorRequestManager;
         this.logger = logContext.logger(getClass());
@@ -127,37 +99,16 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         int maxPollIntervalMs = config.getInt(CommonClientConfigs.MAX_POLL_INTERVAL_MS_CONFIG);
         long retryBackoffMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG);
         long retryBackoffMaxMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MAX_MS_CONFIG);
-        this.heartbeatState = new StreamsHeartbeatRequestManager.HeartbeatState(streamsInterface, membershipManager, maxPollIntervalMs);
+        this.heartbeatState = new StreamsHeartbeatRequestManager.HeartbeatState(streamsAssignmentInterface, membershipManager, maxPollIntervalMs);
         this.heartbeatRequestState = new StreamsHeartbeatRequestManager.HeartbeatRequestState(logContext, time, 0, retryBackoffMs,
             retryBackoffMaxMs, maxPollIntervalMs);
         this.pollTimer = time.timer(maxPollIntervalMs);
         this.metricsManager = new HeartbeatMetricsManager(metrics);
         this.streamsInterface = streamsAssignmentInterface;
+        this.assignedTopicIdCache = new HashMap<>();
+        this.metadata = metadata;
     }
 
-    /**
-     * This will build a heartbeat request if one must be sent, determined based on the member
-     * state. A heartbeat is sent in the following situations:
-     * <ol>
-     *     <li>Member is part of the consumer group or wants to join it.</li>
-     *     <li>The heartbeat interval has expired, or the member is in a state that indicates
-     *     that it should heartbeat without waiting for the interval.</li>
-     * </ol>
-     * This will also determine the maximum wait time until the next poll based on the member's
-     * state.
-     * <ol>
-     *     <li>If the member is without a coordinator or is in a failed state, the timer is set
-     *     to Long.MAX_VALUE, as there's no need to send a heartbeat.</li>
-     *     <li>If the member cannot send a heartbeat due to either exponential backoff, it will
-     *     return the remaining time left on the backoff timer.</li>
-     *     <li>If the member's heartbeat timer has not expired, It will return the remaining time
-     *     left on the heartbeat timer.</li>
-     *     <li>If the member can send a heartbeat, the timer is set to the current heartbeat interval.</li>
-     * </ol>
-     *
-     * @return {@link PollResult} that includes a heartbeat request if one must be sent, and the
-     * time to wait until the next poll.
-     */
     @Override
     public NetworkClientDelegate.PollResult poll(long currentTimeMs) {
         if (!coordinatorRequestManager.coordinator().isPresent() ||
@@ -179,7 +130,8 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             // We can ignore the leave response because we can join before or after receiving the response.
             heartbeatRequestState.reset();
             heartbeatState.reset();
-            return new NetworkClientDelegate.PollResult(heartbeatRequestState.heartbeatIntervalMs, Collections.singletonList(leaveHeartbeat));
+            return new NetworkClientDelegate.PollResult(heartbeatRequestState.heartbeatIntervalMs,
+                Collections.singletonList(leaveHeartbeat));
         }
 
         boolean heartbeatNow = membershipManager.shouldHeartbeatNow() && !heartbeatRequestState.requestInFlight();
@@ -191,18 +143,6 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         return new NetworkClientDelegate.PollResult(heartbeatRequestState.heartbeatIntervalMs, Collections.singletonList(request));
     }
 
-    /**
-     * Returns the delay for which the application thread can safely wait before it should be responsive
-     * to results from the request managers. For example, the subscription state can change when heartbeats
-     * are sent, so blocking for longer than the heartbeat interval might mean the application thread is not
-     * responsive to changes.
-     *
-     * Similarly, we may have to unblock the application thread to send a `PollApplicationEvent` to make sure
-     * our poll timer will not expire while we are polling.
-     *
-     * <p>In the event that heartbeats are currently being skipped, this still returns the next heartbeat
-     * delay rather than {@code Long.MAX_VALUE} so that the application thread remains responsive.
-     */
     @Override
     public long maximumTimeToWait(long currentTimeMs) {
         pollTimer.update(currentTimeMs);
@@ -228,9 +168,9 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         NetworkClientDelegate.UnsentRequest request = new NetworkClientDelegate.UnsentRequest(
             new StreamsHeartbeatRequest.Builder(this.heartbeatState.buildRequestData()),
             coordinatorRequestManager.coordinator());
-        if (ignoreResponse)
+        if (ignoreResponse) {
             return logResponse(request);
-        else
+        } else {
             return request.whenComplete((response, exception) -> {
                 long completionTimeMs = request.handler().completionTimeMs();
                 if (response != null) {
@@ -240,6 +180,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                     onFailure(exception, completionTimeMs);
                 }
             });
+        }
     }
 
     private NetworkClientDelegate.UnsentRequest logResponse(final NetworkClientDelegate.UnsentRequest request) {
@@ -248,12 +189,13 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                 metricsManager.recordRequestLatency(response.requestLatencyMs());
                 Errors error =
                     Errors.forCode(((StreamsHeartbeatResponse) response.responseBody()).data().errorCode());
-                if (error == Errors.NONE)
-                    logger.debug("GroupHeartbeat responded successfully: {}", response);
-                else
-                    logger.error("GroupHeartbeat failed because of {}: {}", error, response);
+                if (error == Errors.NONE) {
+                    logger.debug("StreamsHeartbeat responded successfully: {}", response);
+                } else {
+                    logger.error("StreamsHeartbeat failed because of {}: {}", error, response);
+                }
             } else {
-                logger.error("GroupHeartbeat failed because of unexpected exception.", exception);
+                logger.error("StreamsHeartbeat failed because of unexpected exception.", exception);
             }
         });
     }
@@ -262,13 +204,13 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         this.heartbeatRequestState.onFailedAttempt(responseTimeMs);
         this.heartbeatState.reset();
         if (exception instanceof RetriableException) {
-            String message = String.format("GroupHeartbeatRequest failed because of the retriable exception. " +
+            String message = String.format("StreamsHeartbeatRequest failed because of the retriable exception. " +
                     "Will retry in %s ms: %s",
                 heartbeatRequestState.remainingBackoffMs(responseTimeMs),
                 exception.getMessage());
             logger.debug(message);
         } else {
-            logger.error("GroupHeartbeatRequest failed due to fatal error: " + exception.getMessage());
+            logger.error("StreamsHeartbeatRequest failed due to fatal error: {}", exception.getMessage());
             handleFatalFailure(exception);
         }
     }
@@ -287,9 +229,10 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             if (data.shouldComputeAssignment()) {
                 streamsPrepareAssignmentRequestManager.prepareAssignment();
             }
+            if (data.partitionsByHost() != null) {
+                streamsInterface.partitionsByHost.set(convertHostInfoMap(data));
+            }
 
-
-            // TODO: Maybe refactor `MembershipManager` to not access `ConsumerGroupHeartbeatResponseData` directly
             ConsumerGroupHeartbeatResponseData cgData = new ConsumerGroupHeartbeatResponseData();
             cgData.setMemberId(data.memberId());
             cgData.setMemberEpoch(data.memberEpoch());
@@ -298,41 +241,68 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             cgData.setThrottleTimeMs(data.throttleTimeMs());
             cgData.setHeartbeatIntervalMs(data.heartbeatIntervalMs());
 
+            Errors assignmentError = response.assignmentError();
+            String assignmentErrorMessage = response.data().errorMessage();
+            if (assignmentError != Errors.NONE) {
+                logger.warn("Assignment incomplete. {}. {}", assignmentError.message(), assignmentErrorMessage);
+                switch (assignmentError) {
+                    case STREAMS_SHUTDOWN_APPLICATION:
+                        streamsInterface.requestShutdown();
+                        break;
+                    case STREAMS_INCONSISTENT_TOPOLOGY:
+                    case STREAMS_MISSING_SOURCE_TOPICS:
+                    case STREAMS_GROUP_UNINITIALIZED:
+                        break;
+                }
+            }
 
             if (data.activeTasks() != null && data.standbyTasks() != null && data.warmupTasks() != null) {
-                synchronized (streamsInterface.targetAssignment) {
-                    updateTaskIdCollection(data.activeTasks(), streamsInterface.targetAssignment.activeTasks);
-                    updateTaskIdCollection(data.standbyTasks(), streamsInterface.targetAssignment.standbyTasks);
-                    updateTaskIdCollection(data.warmupTasks(), streamsInterface.targetAssignment.warmupTasks);
-                }
 
-                // TODO: Regular expressions and UUIDs
+                Assignment targetAssignment = new Assignment();
+                updateTaskIdCollection(data.activeTasks(), targetAssignment.activeTasks);
+                updateTaskIdCollection(data.standbyTasks(), targetAssignment.standbyTasks);
+                updateTaskIdCollection(data.warmupTasks(), targetAssignment.warmupTasks);
+                streamsInterface.targetAssignment.set(targetAssignment);
 
                 List<ConsumerGroupHeartbeatResponseData.TopicPartitions> tps = new ArrayList<>();
-
-
-
-
-
-                data.activeTasks().forEach( taskId -> {
+                data.activeTasks().forEach(taskId -> {
                     streamsInterface.subtopologyMap().get(taskId.subtopology()).sourceTopics.forEach(topic -> {
-                        membershipManager.updateTargetAssignment(topic, taskId.partitions());
-                        ConsumerGroupHeartbeatResponseData.TopicPartitions tp = new ConsumerGroupHeartbeatResponseData.TopicPartitions();
-                        tp.setTopicId(topic); // TODO: Resolve topicId
-                        cgAssignment.setTopicPartitions(topic, taskId.partitions());
+                        final Optional<Uuid> uuid = findTopicIdInGlobalOrLocalCache(topic);
+                        if (uuid.isPresent()) {
+                            ConsumerGroupHeartbeatResponseData.TopicPartitions tp = new ConsumerGroupHeartbeatResponseData.TopicPartitions();
+                            tp.setTopicId(uuid.get());
+                            tp.setPartitions(taskId.partitions());
+                            tps.add(tp);
+                        }
                     });
                 });
                 ConsumerGroupHeartbeatResponseData.Assignment cgAssignment = new ConsumerGroupHeartbeatResponseData.Assignment();
                 cgAssignment.setTopicPartitions(tps);
+                cgData.setAssignment(cgAssignment);
 
             } else {
-                // TODO: Partially defined does not make much sense I guess
+                if (data.activeTasks() != null || data.standbyTasks() != null || data.warmupTasks() != null) {
+                    throw new IllegalStateException("Invalid response data, task collections must be all null or all non-null: " + data);
+                }
             }
 
             membershipManager.onHeartbeatSuccess(cgData);
-            return;
+        } else {
+            onErrorResponse(response, currentTimeMs);
         }
-        onErrorResponse(response, currentTimeMs);
+    }
+
+    private static Map<StreamsAssignmentInterface.HostInfo, List<TopicPartition>> convertHostInfoMap(
+        final StreamsHeartbeatResponseData data) {
+        Map<StreamsAssignmentInterface.HostInfo, List<TopicPartition>> partitionsByHost = new HashMap<>();
+        data.partitionsByHost().forEach(hostInfo -> {
+            List<TopicPartition> topicPartitions = hostInfo.partitions().stream()
+                .flatMap(partition ->
+                    partition.partitions().stream().map(partitionId -> new TopicPartition(partition.topic(), partitionId)))
+                .collect(Collectors.toList());
+            partitionsByHost.put(new StreamsAssignmentInterface.HostInfo(hostInfo.host(), hostInfo.port()), topicPartitions);
+        });
+        return partitionsByHost;
     }
 
     private void updateTaskIdCollection(
@@ -360,7 +330,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         switch (error) {
             case NOT_COORDINATOR:
                 // the manager should retry immediately when the coordinator node becomes available again
-                message = String.format("GroupHeartbeatRequest failed because the group coordinator %s is incorrect. " +
+                message = String.format("StreamsHeartbeatRequest failed because the group coordinator %s is incorrect. " +
                         "Will attempt to find the coordinator again and retry",
                     coordinatorRequestManager.coordinator());
                 logInfo(message, response, currentTimeMs);
@@ -370,7 +340,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                 break;
 
             case COORDINATOR_NOT_AVAILABLE:
-                message = String.format("GroupHeartbeatRequest failed because the group coordinator %s is not available. " +
+                message = String.format("StreamsHeartbeatRequest failed because the group coordinator %s is not available. " +
                         "Will attempt to find the coordinator again and retry",
                     coordinatorRequestManager.coordinator());
                 logInfo(message, response, currentTimeMs);
@@ -381,7 +351,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
 
             case COORDINATOR_LOAD_IN_PROGRESS:
                 // the manager will backoff and retry
-                message = String.format("GroupHeartbeatRequest failed because the group coordinator %s is still loading." +
+                message = String.format("StreamsHeartbeatRequest failed because the group coordinator %s is still loading." +
                         "Will retry",
                     coordinatorRequestManager.coordinator());
                 logInfo(message, response, currentTimeMs);
@@ -390,12 +360,12 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             case GROUP_AUTHORIZATION_FAILED:
                 GroupAuthorizationException exception =
                     GroupAuthorizationException.forGroupId(membershipManager.groupId());
-                logger.error("GroupHeartbeatRequest failed due to group authorization failure: {}", exception.getMessage());
+                logger.error("StreamsHeartbeatRequest failed due to group authorization failure: {}", exception.getMessage());
                 handleFatalFailure(error.exception(exception.getMessage()));
                 break;
 
             case UNRELEASED_INSTANCE_ID:
-                logger.error("GroupHeartbeatRequest failed due to the instance id {} was not released: {}",
+                logger.error("StreamsHeartbeatRequest failed due to the instance id {} was not released: {}",
                     membershipManager.groupInstanceId().orElse("null"), errorMessage);
                 handleFatalFailure(Errors.UNRELEASED_INSTANCE_ID.exception(errorMessage));
                 break;
@@ -404,12 +374,12 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             case GROUP_MAX_SIZE_REACHED:
             case UNSUPPORTED_ASSIGNOR:
             case UNSUPPORTED_VERSION:
-                logger.error("GroupHeartbeatRequest failed due to error: {}", error);
+                logger.error("StreamsHeartbeatRequest failed due to error: {}", error);
                 handleFatalFailure(error.exception(errorMessage));
                 break;
 
             case FENCED_MEMBER_EPOCH:
-                message = String.format("GroupHeartbeatRequest failed for member %s because epoch %s is fenced.",
+                message = String.format("StreamsHeartbeatRequest failed for member %s because epoch %s is fenced.",
                     membershipManager.memberId(), membershipManager.memberEpoch());
                 logInfo(message, response, currentTimeMs);
                 membershipManager.transitionToFenced();
@@ -418,7 +388,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                 break;
 
             case UNKNOWN_MEMBER_ID:
-                message = String.format("GroupHeartbeatRequest failed because member %s is unknown.",
+                message = String.format("StreamsHeartbeatRequest failed because member %s is unknown.",
                     membershipManager.memberId());
                 logInfo(message, response, currentTimeMs);
                 membershipManager.transitionToFenced();
@@ -428,7 +398,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
 
             default:
                 // If the manager receives an unknown error - there could be a bug in the code or a new error code
-                logger.error("GroupHeartbeatRequest failed due to unexpected error: {}", error);
+                logger.error("StreamsHeartbeatRequest failed due to unexpected error: {}", error);
                 handleFatalFailure(error.exception(errorMessage));
                 break;
         }
@@ -449,13 +419,13 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
     }
 
     /**
-     * Represents the state of a heartbeat request, including logic for timing, retries, and exponential backoff. The
-     * object extends {@link RequestState} to enable exponential backoff and duplicated request handling. The two fields
-     * that it holds are:
+     * Represents the state of a heartbeat request, including logic for timing, retries, and exponential backoff. The object extends
+     * {@link RequestState} to enable exponential backoff and duplicated request handling. The two fields that it holds are:
      */
     static class HeartbeatRequestState extends RequestState {
+
         /**
-         *  heartbeatTimer tracks the time since the last heartbeat was sent
+         * heartbeatTimer tracks the time since the last heartbeat was sent
          */
         private final Timer heartbeatTimer;
 
@@ -471,7 +441,8 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             final long retryBackoffMs,
             final long retryBackoffMaxMs,
             final double jitter) {
-            super(logContext, StreamsHeartbeatRequestManager.HeartbeatRequestState.class.getName(), retryBackoffMs, 2, retryBackoffMaxMs, jitter);
+            super(logContext, StreamsHeartbeatRequestManager.HeartbeatRequestState.class.getName(), retryBackoffMs, 2, retryBackoffMaxMs,
+                jitter);
             this.heartbeatIntervalMs = heartbeatIntervalMs;
             this.heartbeatTimer = time.timer(heartbeatIntervalMs);
         }
@@ -507,35 +478,21 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
         }
     }
 
-
-    /**
-     * Look for topic in the global metadata cache. If found, add it to the local cache and
-     * return it. If not found, look for it in the local metadata cache. Return empty if not
-     * found in any of the two.
-     */
-    private Optional<String> findTopicIdINGlobalOrLocalCache(String topicName) {
+    private Optional<Uuid> findTopicIdInGlobalOrLocalCache(String topicName) {
         Uuid idFromMetadataCache = metadata.topicIds().getOrDefault(topicName, null);
         if (idFromMetadataCache != null) {
             // Add topic name to local cache, so it can be reused if included in a next target
             // assignment if metadata cache not available.
-            assignedTopicNamesCache.put(topicId, idFromMetadataCache);
+            assignedTopicIdCache.put(topicName, idFromMetadataCache);
             return Optional.of(idFromMetadataCache);
         } else {
-            // Topic ID was not found in metadata. Check if the topic name is in the local
-            // cache of topics currently assigned. This will avoid a metadata request in the
-            // case where the metadata cache may have been flushed right before the
-            // revocation of a previously assigned topic.
-            String nameFromSubscriptionCache = assignedTopicNamesCache.getOrDefault(topicId, null);
-            return Optional.ofNullable(nameFromSubscriptionCache);
+            Uuid idFromLocalCache = assignedTopicIdCache.getOrDefault(topicName, null);
+            return Optional.ofNullable(idFromLocalCache);
         }
     }
 
-    /**
-     * Builds the heartbeat requests correctly, ensuring that all information is sent according to
-     * the protocol, but subsequent requests do not send information which has not changed. This
-     * is important to ensure that reconciliation completes successfully.
-     */
     static class HeartbeatState {
+
         private final MembershipManager membershipManager;
         private final int rebalanceTimeoutMs;
         private final StreamsHeartbeatRequestManager.HeartbeatState.SentFields sentFields;
@@ -574,21 +531,22 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             // InstanceId - set if present
             membershipManager.groupInstanceId().ifPresent(data::setInstanceId);
 
-            boolean sendAllFields = membershipManager.state() == MemberState.JOINING;
+            boolean joining = membershipManager.state() == MemberState.JOINING;
 
             // RebalanceTimeoutMs - only sent when joining or if it has changed since the last heartbeat
-            if (sendAllFields || sentFields.rebalanceTimeoutMs != rebalanceTimeoutMs) {
+            if (joining || sentFields.rebalanceTimeoutMs != rebalanceTimeoutMs) {
                 data.setRebalanceTimeoutMs(rebalanceTimeoutMs);
                 sentFields.rebalanceTimeoutMs = rebalanceTimeoutMs;
             }
 
             // Immutable -- only sent when joining
-            if (sendAllFields) {
+            if (joining) {
                 data.setProcessId(streamsInterface.processID().toString());
                 HostInfo hostInfo = new HostInfo();
-                hostInfo.setHost(streamsInterface.userEndPointHost());
-                hostInfo.setPort(streamsInterface.userEndPointPort());
+                hostInfo.setHost(streamsInterface.endPoint().host);
+                hostInfo.setPort(streamsInterface.endPoint().port);
                 data.setHostInfo(hostInfo);
+                data.setAssignor(streamsInterface.assignor());
                 data.setClientTags(streamsInterface.clientTags().entrySet().stream().map(entry -> {
                     StreamsHeartbeatRequestData.KeyValue tag = new StreamsHeartbeatRequestData.KeyValue();
                     tag.setKey(entry.getKey());
@@ -601,18 +559,23 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                     config.setValue(entry.getValue().toString());
                     return config;
                 }).collect(Collectors.toList()));
+            } else {
+                // FIXME: This seems to be a bug in the RPC serialization code. The default should be null, but it's empty.
+                data.setAssignor(null);
             }
 
             if (streamsInterface.shutdownRequested()) {
                 data.setShutdownApplication(true);
             }
 
-            synchronized (streamsInterface.reconciledAssignment) {
-                if (!streamsInterface.reconciledAssignment.equals(sentFields.localAssignment)) {
-                    data.setActiveTasks(convertTaskIdCollection(streamsInterface.reconciledAssignment.activeTasks));
-                    data.setStandbyTasks(convertTaskIdCollection(streamsInterface.reconciledAssignment.standbyTasks));
-                    data.setWarmupTasks(convertTaskIdCollection(streamsInterface.reconciledAssignment.warmupTasks));
-                    sentFields.localAssignment = streamsInterface.reconciledAssignment;
+            Assignment reconciledAssignment = streamsInterface.reconciledAssignment.get();
+
+            if (reconciledAssignment != null) {
+                if (!reconciledAssignment.equals(sentFields.assignment)) {
+                    data.setActiveTasks(convertTaskIdCollection(reconciledAssignment.activeTasks));
+                    data.setStandbyTasks(convertTaskIdCollection(reconciledAssignment.standbyTasks));
+                    data.setWarmupTasks(convertTaskIdCollection(reconciledAssignment.warmupTasks));
+                    sentFields.assignment = reconciledAssignment;
                 }
             }
 
@@ -623,7 +586,7 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
             return tasks.stream()
                 .collect(
                     Collectors.groupingBy(StreamsAssignmentInterface.TaskId::subtopologyId,
-                    Collectors.mapping(StreamsAssignmentInterface.TaskId::taskId, Collectors.toList()))
+                        Collectors.mapping(StreamsAssignmentInterface.TaskId::partitionId, Collectors.toList()))
                 )
                 .entrySet()
                 .stream()
@@ -638,14 +601,16 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
 
         // Fields of StreamsHeartbeatRequest sent in the most recent request
         static class SentFields {
-            private int rebalanceTimeoutMs = -1;
-            private Assignment localAssignment = null;
 
-            SentFields() {}
+            private int rebalanceTimeoutMs = -1;
+            private Assignment assignment = null;
+
+            SentFields() {
+            }
 
             void reset() {
                 rebalanceTimeoutMs = -1;
-                localAssignment = null;
+                assignment = null;
             }
         }
     }

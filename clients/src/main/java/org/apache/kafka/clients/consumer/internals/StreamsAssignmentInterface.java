@@ -16,13 +16,18 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.common.TopicPartition;
+
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Defines a self-contained object to exchange assignment-related metadata with the Kafka Streams instance.
@@ -33,9 +38,9 @@ public class StreamsAssignmentInterface {
 
     private UUID processID;
 
-    private String userEndPointHost;
+    private HostInfo endPoint;
 
-    private int userEndPointPort;
+    private String assignor;
 
     private Map<String, SubTopology> subtopologyMap;
 
@@ -51,12 +56,12 @@ public class StreamsAssignmentInterface {
         return processID;
     }
 
-    public String userEndPointHost() {
-        return userEndPointHost;
+    public HostInfo endPoint() {
+        return endPoint;
     }
 
-    public int userEndPointPort() {
-        return userEndPointPort;
+    public String assignor() {
+        return assignor;
     }
 
     public Map<String, SubTopology> subtopologyMap() {
@@ -67,6 +72,7 @@ public class StreamsAssignmentInterface {
         return assignmentConfiguration;
     }
 
+    // TODO: This needs to be used somewhere
     public Map<TaskId, Long> taskLags() {
         return taskLags;
     }
@@ -84,19 +90,46 @@ public class StreamsAssignmentInterface {
         shutdownRequested.set(true);
     }
 
+    // TODO: This needs to be checked somewhere.
     public boolean shutdownRequested() {
         return shutdownRequested.get();
     }
 
+    // TODO: This needs to be called somewhere
     public void setTaskLags(Map<TaskId, Long> taskLags) {
         this.taskLags = taskLags;
     }
 
-    // TODO: Reconciled assignment updated by the stream thread
-    public final Assignment reconciledAssignment = new Assignment();
+    public final AtomicReference<Assignment> reconciledAssignment = new AtomicReference<>();
 
-    // TODO: Target assignment read by the stream thread
-    public final Assignment targetAssignment = new Assignment();
+    public final AtomicReference<Assignment> targetAssignment = new AtomicReference<>();
+
+    /**
+     * List of partitions available on each host.
+     * Updated by the streams protocol client.
+     */
+    public final AtomicReference<Map<HostInfo, List<TopicPartition>>> partitionsByHost = new AtomicReference<>();
+
+    public static class HostInfo {
+
+        public final String host;
+
+        public final int port;
+
+        public HostInfo(final String host, final int port) {
+            this.host = host;
+            this.port = port;
+        }
+
+        @Override
+        public String toString() {
+            return "HostInfo{" +
+                "host='" + host + '\'' +
+                ", port=" + port +
+                '}';
+        }
+
+    }
 
     public static class Assignment {
 
@@ -106,6 +139,37 @@ public class StreamsAssignmentInterface {
 
         public final Set<TaskId> warmupTasks = new HashSet<>();
 
+        public Assignment() {
+        }
+
+        public Assignment(final Set<TaskId> activeTasks, final Set<TaskId> standbyTasks, final Set<TaskId> warmupTasks) {
+            this.activeTasks.addAll(activeTasks);
+            this.standbyTasks.addAll(standbyTasks);
+            this.warmupTasks.addAll(warmupTasks);
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            final Assignment that = (Assignment) o;
+            return Objects.equals(activeTasks, that.activeTasks)
+                && Objects.equals(standbyTasks, that.standbyTasks)
+                && Objects.equals(warmupTasks, that.warmupTasks);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(activeTasks, standbyTasks, warmupTasks);
+        }
+
+        public Assignment copy() {
+            return new Assignment(activeTasks, standbyTasks, warmupTasks);
+        }
     }
 
     public static class TopicInfo {
@@ -131,26 +195,26 @@ public class StreamsAssignmentInterface {
 
     public static class TaskId {
         public final String subtopologyId;
-        public final int taskId;
+        public final int partitionId;
 
-        public int taskId() {
-            return taskId;
+        public int partitionId() {
+            return partitionId;
         }
 
         public String subtopologyId() {
             return subtopologyId;
         }
 
-        public TaskId(final String subtopologyId, final int taskId) {
+        public TaskId(final String subtopologyId, final int partitionId) {
             this.subtopologyId = subtopologyId;
-            this.taskId = taskId;
+            this.partitionId = partitionId;
         }
 
         @Override
         public String toString() {
             return "TaskId{" +
                 "subtopologyId=" + subtopologyId +
-                ", taskId=" + taskId +
+                ", partitionId=" + partitionId +
                 '}';
         }
     }
@@ -184,15 +248,15 @@ public class StreamsAssignmentInterface {
     }
 
     public StreamsAssignmentInterface(UUID processID,
-                                      String userEndPointHost,
-                                      int userEndPointPort,
+                                      HostInfo endPoint,
+                                      String assignor,
                                       Map<String, SubTopology> subtopologyMap,
                                       Map<String, Object> assignmentConfiguration,
                                       Map<String, String> clientTags
                                       ) {
         this.processID = processID;
-        this.userEndPointHost = userEndPointHost;
-        this.userEndPointPort = userEndPointPort;
+        this.endPoint = endPoint;
+        this.assignor = assignor;
         this.subtopologyMap = subtopologyMap;
         this.assignmentConfiguration = assignmentConfiguration;
         this.taskLags = new HashMap<>();
@@ -204,8 +268,8 @@ public class StreamsAssignmentInterface {
     public String toString() {
         return "StreamsAssignmentMetadata{" +
             "processID=" + processID +
-            ", userEndPointHost='" + userEndPointHost + '\'' +
-            ", userEndPointPort=" + userEndPointPort +
+            ", endPoint='" + endPoint + '\'' +
+            ", assignor='" + assignor + '\'' +
             ", subtopologyMap=" + subtopologyMap +
             ", assignmentConfiguration=" + assignmentConfiguration +
             ", taskLags=" + taskLags +
