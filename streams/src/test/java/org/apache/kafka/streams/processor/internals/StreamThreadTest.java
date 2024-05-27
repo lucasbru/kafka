@@ -1502,6 +1502,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ).updateThreadMetadata(getSharedAdminClientId(CLIENT_ID));
 
@@ -2691,6 +2692,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ) {
             @Override
@@ -2748,6 +2750,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ) {
             @Override
@@ -2814,6 +2817,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ) {
             @Override
@@ -2876,6 +2880,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ) {
             @Override
@@ -2935,6 +2940,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         ) {
             @Override
@@ -3140,6 +3146,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         );
         final MetricName testMetricName = new MetricName("test_metric", "", "", new HashMap<>());
@@ -3194,6 +3201,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             (e, b) -> { },
+            null,
             null
         ) {
             @Override
@@ -3578,6 +3586,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             null,
+            null,
             null
         );
     }
@@ -3699,6 +3708,7 @@ public class StreamThreadTest {
             new LinkedList<>(),
             null,
             HANDLER,
+            null,
             null
         );
     }
