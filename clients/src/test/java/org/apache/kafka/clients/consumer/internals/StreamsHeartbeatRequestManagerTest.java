@@ -19,10 +19,13 @@ package org.apache.kafka.clients.consumer.internals;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.UnsentRequest;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Assignment;
 import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.HostInfo;
-import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.SubTopology;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Subtopology;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.TaskId;
 import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
 import org.apache.kafka.common.message.StreamsHeartbeatResponseData;
 import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -37,9 +40,11 @@ import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -57,6 +62,7 @@ class StreamsHeartbeatRequestManagerTest {
     public static final String TEST_MEMBER_ID = "testMemberId";
     public static final int TEST_MEMBER_EPOCH = 5;
     public static final String TEST_INSTANCE_ID = "instanceId";
+    public static final int TEST_THROTTLE_TIME_MS = 5;
     private StreamsHeartbeatRequestManager heartbeatRequestManager;
 
     private Time time;
@@ -93,7 +99,7 @@ class StreamsHeartbeatRequestManagerTest {
 
     private final String assignor = "test";
 
-    private final Map<String, SubTopology> subtopologyMap = new HashMap<>();
+    private final Map<String, Subtopology> subtopologyMap = new HashMap<>();
 
     private final Map<String, Object> assignmentConfiguration = new HashMap<>();
 
@@ -233,14 +239,82 @@ class StreamsHeartbeatRequestManagerTest {
     void testSuccessfulResponse() {
         mockJoiningState();
 
+        streamsAssignmentInterface.subtopologyMap().put("0", new Subtopology());
+        streamsAssignmentInterface.subtopologyMap().put("1", new Subtopology());
+        streamsAssignmentInterface.subtopologyMap().put("2", new Subtopology());
+
         StreamsHeartbeatResponseData data = new StreamsHeartbeatResponseData()
             .setErrorCode(Errors.NONE.code())
             .setThrottleTimeMs(0)
-            .setMemberEpoch(TEST_MEMBER_EPOCH);
+            .setMemberId(TEST_MEMBER_ID)
+            .setMemberEpoch(TEST_MEMBER_EPOCH)
+            .setThrottleTimeMs(TEST_THROTTLE_TIME_MS)
+            .setHeartbeatIntervalMs(1000)
+            .setActiveTasks(Collections.singletonList(
+                new StreamsHeartbeatResponseData.TaskId().setSubtopology("0").setPartitions(Collections.singletonList(0))))
+            .setActiveTasks(Collections.singletonList(
+                new StreamsHeartbeatResponseData.TaskId().setSubtopology("1").setPartitions(Collections.singletonList(1))))
+            .setActiveTasks(Collections.singletonList(
+                new StreamsHeartbeatResponseData.TaskId().setSubtopology("2").setPartitions(Collections.singletonList(2))));
 
         mockResponse(data);
 
-        verify(membershipManager).onHeartbeatSuccess(any());
+        ArgumentCaptor<ConsumerGroupHeartbeatResponseData> captor = ArgumentCaptor.forClass(ConsumerGroupHeartbeatResponseData.class);
+        verify(membershipManager, times(1)).onHeartbeatSuccess(captor.capture());
+        ConsumerGroupHeartbeatResponseData response = captor.getValue();
+        assertEquals(Errors.NONE.code(), response.errorCode());
+        assertEquals(TEST_MEMBER_ID, response.memberId());
+        assertEquals(TEST_MEMBER_EPOCH, response.memberEpoch());
+        assertEquals(TEST_THROTTLE_TIME_MS, response.throttleTimeMs());
+        assertEquals(1000, response.heartbeatIntervalMs());
+
+        final Assignment targetAssignment = streamsAssignmentInterface.targetAssignment.get();
+        assertEquals(1, targetAssignment.activeTasks.size());
+        final TaskId activeTaskId = targetAssignment.activeTasks.stream().findFirst().get();
+        assertEquals(activeTaskId.subtopologyId, "0");
+        assertEquals(activeTaskId.partitionId, 0);
+
+        assertEquals(1, targetAssignment.standbyTasks.size());
+        final TaskId standbyTaskId = targetAssignment.standbyTasks.stream().findFirst().get();
+        assertEquals(standbyTaskId.subtopologyId, "1");
+        assertEquals(standbyTaskId.partitionId, 1);
+
+        assertEquals(1, targetAssignment.warmupTasks.size());
+        final TaskId warmupTaskId = targetAssignment.warmupTasks.stream().findFirst().get();
+        assertEquals(warmupTaskId.subtopologyId, "2");
+        assertEquals(warmupTaskId.partitionId, 2);
+
+    }
+
+
+    @Test
+    void testPrepareAssignment() {
+        mockJoiningState();
+
+        StreamsHeartbeatResponseData data = new StreamsHeartbeatResponseData()
+            .setErrorCode(Errors.NONE.code())
+            .setThrottleTimeMs(0)
+            .setMemberEpoch(TEST_MEMBER_EPOCH)
+            .setShouldComputeAssignment(true);
+
+        mockResponse(data);
+
+        verify(streamsPrepareAssignmentRequestManager).prepareAssignment();
+    }
+
+    @Test
+    void testInitializeTopology() {
+        mockJoiningState();
+
+        StreamsHeartbeatResponseData data = new StreamsHeartbeatResponseData()
+            .setErrorCode(Errors.NONE.code())
+            .setThrottleTimeMs(0)
+            .setMemberEpoch(TEST_MEMBER_EPOCH)
+            .setShouldComputeAssignment(true);
+
+        mockResponse(data);
+
+        verify(streamsInitializeRequestManager).initialize();
     }
 
     private void mockResponse(final StreamsHeartbeatResponseData data) {

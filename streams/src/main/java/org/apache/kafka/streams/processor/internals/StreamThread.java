@@ -27,7 +27,7 @@ import org.apache.kafka.clients.consumer.InvalidOffsetException;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface;
 import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Assignment;
-import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.SubTopology;
+import org.apache.kafka.clients.consumer.internals.StreamsAssignmentInterface.Subtopology;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Metric;
@@ -56,7 +56,6 @@ import org.apache.kafka.streams.processor.StandbyUpdateListener;
 import org.apache.kafka.streams.processor.StateRestoreListener;
 import org.apache.kafka.streams.processor.TaskId;
 import org.apache.kafka.streams.processor.internals.InternalTopologyBuilder.TopicsInfo;
-import org.apache.kafka.streams.processor.internals.TopologyMetadata.Subtopology;
 import org.apache.kafka.streams.processor.internals.assignment.AssignorError;
 import org.apache.kafka.streams.processor.internals.assignment.ReferenceContainer;
 import org.apache.kafka.streams.processor.internals.metrics.StreamsMetricsImpl;
@@ -544,11 +543,11 @@ public class StreamThread extends Thread implements ProcessingThread {
                                                                       final TopologyMetadata topologyMetadata) {
         final InternalTopologyBuilder internalTopologyBuilder = topologyMetadata.lookupBuilderForNamedTopology(null);
 
-        Map<String, SubTopology> subtopologyMap = new HashMap<>();
-        for (Map.Entry<Subtopology, TopicsInfo> topicsInfoEntry: internalTopologyBuilder.subtopologyToTopicsInfo().entrySet()) {
+        Map<String, Subtopology> subtopologyMap = new HashMap<>();
+        for (Map.Entry<TopologyMetadata.Subtopology, TopicsInfo> topicsInfoEntry: internalTopologyBuilder.subtopologyToTopicsInfo().entrySet()) {
             subtopologyMap.put(
                 String.valueOf(topicsInfoEntry.getKey().nodeGroupId),
-                new SubTopology(
+                new Subtopology(
                     topicsInfoEntry.getValue().sourceTopics,
                     topicsInfoEntry.getValue().sinkTopics,
                     topicsInfoEntry.getValue().repartitionSourceTopics.entrySet()
@@ -1392,7 +1391,7 @@ public class StreamThread extends Thread implements ProcessingThread {
     }
 
     private Set<TopicPartition> toTopicPartitions(final StreamsAssignmentInterface.TaskId task,
-                                                  final StreamsAssignmentInterface.SubTopology subTopology) {
+                                                  final Subtopology subTopology) {
         return
             Stream.concat(
                 subTopology.sourceTopics.stream(),

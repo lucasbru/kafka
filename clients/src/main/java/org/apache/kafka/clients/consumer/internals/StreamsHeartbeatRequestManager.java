@@ -265,17 +265,15 @@ public class StreamsHeartbeatRequestManager implements RequestManager {
                 streamsInterface.targetAssignment.set(targetAssignment);
 
                 List<ConsumerGroupHeartbeatResponseData.TopicPartitions> tps = new ArrayList<>();
-                data.activeTasks().forEach(taskId -> {
-                    streamsInterface.subtopologyMap().get(taskId.subtopology()).sourceTopics.forEach(topic -> {
-                        final Optional<Uuid> uuid = findTopicIdInGlobalOrLocalCache(topic);
-                        if (uuid.isPresent()) {
-                            ConsumerGroupHeartbeatResponseData.TopicPartitions tp = new ConsumerGroupHeartbeatResponseData.TopicPartitions();
-                            tp.setTopicId(uuid.get());
-                            tp.setPartitions(taskId.partitions());
-                            tps.add(tp);
-                        }
-                    });
-                });
+                data.activeTasks().forEach(taskId -> streamsInterface.subtopologyMap().get(taskId.subtopology()).sourceTopics.forEach(topic -> {
+                    final Optional<Uuid> uuid = findTopicIdInGlobalOrLocalCache(topic);
+                    if (uuid.isPresent()) {
+                        ConsumerGroupHeartbeatResponseData.TopicPartitions tp = new ConsumerGroupHeartbeatResponseData.TopicPartitions();
+                        tp.setTopicId(uuid.get());
+                        tp.setPartitions(taskId.partitions());
+                        tps.add(tp);
+                    }
+                }));
                 ConsumerGroupHeartbeatResponseData.Assignment cgAssignment = new ConsumerGroupHeartbeatResponseData.Assignment();
                 cgAssignment.setTopicPartitions(tps);
                 cgData.setAssignment(cgAssignment);

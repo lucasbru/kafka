@@ -42,7 +42,7 @@ public class StreamsAssignmentInterface {
 
     private String assignor;
 
-    private Map<String, SubTopology> subtopologyMap;
+    private Map<String, Subtopology> subtopologyMap;
 
     private Map<String, Object> assignmentConfiguration;
 
@@ -64,7 +64,7 @@ public class StreamsAssignmentInterface {
         return assignor;
     }
 
-    public Map<String, SubTopology> subtopologyMap() {
+    public Map<String, Subtopology> subtopologyMap() {
         return subtopologyMap;
     }
 
@@ -219,14 +219,14 @@ public class StreamsAssignmentInterface {
         }
     }
 
-    public static class SubTopology {
+    public static class Subtopology {
 
         public final Set<String> sinkTopics;
         public final Set<String> sourceTopics;
         public final Map<String, TopicInfo> stateChangelogTopics;
         public final Map<String, TopicInfo> repartitionSourceTopics;
 
-       public SubTopology(final Set<String> sinkTopics,
+       public Subtopology(final Set<String> sinkTopics,
                           final Set<String> sourceTopics,
                           final Map<String, TopicInfo> repartitionSourceTopics,
                           final Map<String, TopicInfo> stateChangelogTopics) {
@@ -238,7 +238,7 @@ public class StreamsAssignmentInterface {
 
         @Override
         public String toString() {
-            return "SubTopology{" +
+            return "Subtopology{" +
                 "sinkTopics=" + sinkTopics +
                 ", sourceTopics=" + sourceTopics +
                 ", stateChangelogTopics=" + stateChangelogTopics +
@@ -250,7 +250,7 @@ public class StreamsAssignmentInterface {
     public StreamsAssignmentInterface(UUID processID,
                                       HostInfo endPoint,
                                       String assignor,
-                                      Map<String, SubTopology> subtopologyMap,
+                                      Map<String, Subtopology> subtopologyMap,
                                       Map<String, Object> assignmentConfiguration,
                                       Map<String, String> clientTags
                                       ) {
