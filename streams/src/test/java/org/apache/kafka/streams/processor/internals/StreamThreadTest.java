@@ -1503,8 +1503,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ).updateThreadMetadata(getSharedAdminClientId(CLIENT_ID));
+            null,
+            null).updateThreadMetadata(getSharedAdminClientId(CLIENT_ID));
 
         final StreamsException thrown = assertThrows(StreamsException.class, thread::run);
 
@@ -2693,8 +2693,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(State.PENDING_SHUTDOWN);
@@ -2751,8 +2751,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(State.PENDING_SHUTDOWN);
@@ -2818,8 +2818,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(State.PENDING_SHUTDOWN);
@@ -2881,8 +2881,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(State.PENDING_SHUTDOWN);
@@ -2941,8 +2941,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(State.PENDING_SHUTDOWN);
@@ -3147,8 +3147,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        );
+            null,
+            null);
         final MetricName testMetricName = new MetricName("test_metric", "", "", new HashMap<>());
         final Metric testMetric = new KafkaMetric(
             new Object(),
@@ -3202,8 +3202,8 @@ public class StreamThreadTest {
             null,
             (e, b) -> { },
             null,
-            null
-        ) {
+            null,
+            null) {
             @Override
             void runOnceWithProcessingThreads() {
                 setState(StreamThread.State.PENDING_SHUTDOWN);
@@ -3587,8 +3587,8 @@ public class StreamThreadTest {
             null,
             null,
             null,
-            null
-        );
+            null,
+            null);
     }
 
     private TaskManager mockTaskManager(final Task runningTask) {
@@ -3709,8 +3709,8 @@ public class StreamThreadTest {
             null,
             HANDLER,
             null,
-            null
-        );
+            null,
+            null);
     }
     
     private void runOnce() {
