@@ -218,7 +218,10 @@ public class RequestManagers implements Closeable {
 
                     if (streamsInstanceMetadata.isPresent()) {
                         streamsInitializeRequestManager = new StreamsInitializeRequestManager(
-                            streamsInstanceMetadata.get());
+                            logContext,
+                            groupRebalanceConfig.groupId,
+                            streamsInstanceMetadata.get(),
+                            coordinator);
                         streamsPrepareAssignmentRequestManager = new StreamsPrepareAssignmentRequestManager(
                             streamsInstanceMetadata.get());
                         streamsInstallAssignmentRequestManager = new StreamsInstallAssignmentRequestManager(
