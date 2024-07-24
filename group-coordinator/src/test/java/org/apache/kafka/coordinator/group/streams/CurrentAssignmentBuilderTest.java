@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
 
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkAssignment;
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTaskAssignment;
@@ -31,177 +33,217 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class CurrentAssignmentBuilderTest {
 
+    // TODO refine test name after semantics of `withCurrentActiveTaskEpoch` are clarified
     @Test
-    public void testStableToStable() {
+    public void shouldStayInStableStateAndBumpEpochOnUnmodifiedNewAssignment() {
+        int originalEpoch = 10;
+        int bumpedEpoch = originalEpoch + 1;
+
         String subtopologyId1 = Uuid.randomUuid().toString();
         String subtopologyId2 = Uuid.randomUuid().toString();
 
+        Map<String, Set<Integer>> originalAssigment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 4, 5, 6)
+        );
+        Map<String, Set<Integer>> unmodifiedAssignment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 4, 5, 6)
+        );
+
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setMemberEpoch(10)
-            .setPreviousMemberEpoch(10)
-            .setAssignedActiveTasks(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+            .setState(MemberState.STABLE)
+            .setMemberEpoch(originalEpoch)
+            .setPreviousMemberEpoch(originalEpoch)
+            .setAssignedActiveTasks(originalAssigment)
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6))))
-            .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(bumpedEpoch, new Assignment(unmodifiedAssignment))
+            .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> originalEpoch)
             .build();
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-                .setMemberEpoch(11)
-                .setPreviousMemberEpoch(10)
-                .setAssignedActiveTasks(mkAssignment(
-                    mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                    mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+                .setState(MemberState.STABLE)
+                .setMemberEpoch(bumpedEpoch)
+                .setPreviousMemberEpoch(originalEpoch)
+                .setAssignedActiveTasks(unmodifiedAssignment)
                 .build(),
             updatedMember
         );
     }
 
+    // TODO refine test name after semantics of `withCurrentActiveTaskEpoch` are clarified
     @Test
-    public void testStableToStableWithNewTasks() {
+    public void shouldStayInStableStateAndBumpEpochOnNewAssignmentWithoutTaskRevocation() {
+        int originalEpoch = 10;
+        int bumpedEpoch = originalEpoch + 1;
+
         String subtopologyId1 = Uuid.randomUuid().toString();
         String subtopologyId2 = Uuid.randomUuid().toString();
 
+        Map<String, Set<Integer>> originalAssigment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12)
+        );
+        Map<String, Set<Integer>> newAssignment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3, 4),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12, 13)
+        );
+
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setMemberEpoch(10)
-            .setPreviousMemberEpoch(10)
-            .setAssignedActiveTasks(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+            .setState(MemberState.STABLE)
+            .setMemberEpoch(originalEpoch)
+            .setPreviousMemberEpoch(originalEpoch)
+            .setAssignedActiveTasks(originalAssigment)
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3, 4),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6, 7))))
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(bumpedEpoch, new Assignment(newAssignment))
+            // what does `-1` mean, and why is this not `originalEpoch` ?
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1)
             .build();
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-                .setMemberEpoch(11)
-                .setPreviousMemberEpoch(10)
-                .setAssignedActiveTasks(mkAssignment(
-                    mkTaskAssignment(subtopologyId1, 1, 2, 3, 4),
-                    mkTaskAssignment(subtopologyId2, 4, 5, 6, 7)))
+                .setState(MemberState.STABLE)
+                .setMemberEpoch(bumpedEpoch)
+                .setPreviousMemberEpoch(originalEpoch)
+                .setAssignedActiveTasks(newAssignment)
                 .build(),
             updatedMember
         );
     }
 
+    // TODO refine test name after semantics of `withCurrentActiveTaskEpoch` are clarified
     @Test
-    public void testStableToUnrevokedTasks() {
+    public void shouldTransitFromStableToUnrevokedStateAndBumpEpochTasksOnNewAssignmentWithRevokedTasks() {
+        int originalEpoch = 10;
+        int bumpedEpoch = originalEpoch + 1;
+
         String subtopologyId1 = Uuid.randomUuid().toString();
         String subtopologyId2 = Uuid.randomUuid().toString();
 
+        Map<String, Set<Integer>> originalAssigment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12)
+        );
+        Map<String, Set<Integer>> newAssignment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 2, 3, 4),
+            mkTaskAssignment(subtopologyId2, 11, 12, 13)
+        );
+
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setMemberEpoch(10)
-            .setPreviousMemberEpoch(10)
-            .setAssignedActiveTasks(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+            .setState(MemberState.STABLE)
+            .setMemberEpoch(originalEpoch)
+            .setPreviousMemberEpoch(originalEpoch)
+            .setAssignedActiveTasks(originalAssigment)
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 2, 3, 4),
-                mkTaskAssignment(subtopologyId2, 5, 6, 7))))
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(bumpedEpoch, new Assignment(newAssignment))
+            // -1 ?
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1)
             .build();
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
-                .setMemberEpoch(10)
-                .setPreviousMemberEpoch(10)
+                .setState(MemberState.UNREVOKED_TASKS)
+                .setMemberEpoch(originalEpoch)
+                .setPreviousMemberEpoch(originalEpoch)
                 .setAssignedActiveTasks(mkAssignment(
                     mkTaskAssignment(subtopologyId1, 2, 3),
-                    mkTaskAssignment(subtopologyId2, 5, 6)))
+                    mkTaskAssignment(subtopologyId2, 11, 12)))
                 .setActiveTasksPendingRevocation(mkAssignment(
                     mkTaskAssignment(subtopologyId1, 1),
-                    mkTaskAssignment(subtopologyId2, 4)))
+                    mkTaskAssignment(subtopologyId2, 10)))
                 .build(),
             updatedMember
         );
     }
 
+    // TODO refine test name after semantics of `withCurrentActiveTaskEpoch` are clarified
     @Test
-    public void testStableToUnreleasedTasks() {
+    public void shouldTransitFromStableToUnreleasedStateAndBumpEpochOnNewAssignment() {
+        int originalEpoch = 10;
+        int bumpedEpoch = originalEpoch + 1;
+
         String subtopologyId1 = Uuid.randomUuid().toString();
         String subtopologyId2 = Uuid.randomUuid().toString();
 
+        Map<String, Set<Integer>> originalAssigment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12)
+        );
+        Map<String, Set<Integer>> newAssignment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3, 4),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12, 13)
+        );
+
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setMemberEpoch(10)
-            .setPreviousMemberEpoch(10)
-            .setAssignedActiveTasks(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+            .setState(MemberState.STABLE)
+            .setMemberEpoch(originalEpoch)
+            .setPreviousMemberEpoch(originalEpoch)
+            .setAssignedActiveTasks(originalAssigment)
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3, 4),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6, 7))))
-            .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(bumpedEpoch, new Assignment(newAssignment))
+            .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> originalEpoch)
             .build();
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
-                .setMemberEpoch(11)
-                .setPreviousMemberEpoch(10)
-                .setAssignedActiveTasks(mkAssignment(
-                    mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                    mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+                .setState(MemberState.UNRELEASED_TASKS)
+                .setMemberEpoch(bumpedEpoch)
+                .setPreviousMemberEpoch(originalEpoch)
+                .setAssignedActiveTasks(originalAssigment)
                 .build(),
             updatedMember
         );
     }
 
+    // TODO refine test name after semantics of `withCurrentActiveTaskEpoch` are clarified
     @Test
-    public void testStableToUnreleasedTasksWithOwnedTasksNotHavingRevokedTasks() {
+    public void shouldTransitFromStableToUnreleasedStateOnNewAssignmentWithRevokedTasksForOneSubtopologyOnly() {
+        int originalEpoch = 10;
+        int bumpedEpoch = originalEpoch + 1;
+
         String subtopologyId1 = Uuid.randomUuid().toString();
         String subtopologyId2 = Uuid.randomUuid().toString();
 
+        Map<String, Set<Integer>> originalAssigment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 10, 11, 12)
+        );
+        Map<String, Set<Integer>> newAssignment = mkAssignment(
+            mkTaskAssignment(subtopologyId1, 1, 2, 3),
+            mkTaskAssignment(subtopologyId2, 10, 11, 13)
+        );
+
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setMemberEpoch(10)
-            .setPreviousMemberEpoch(10)
-            .setAssignedActiveTasks(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 6)))
+            .setState(MemberState.STABLE)
+            .setMemberEpoch(originalEpoch)
+            .setPreviousMemberEpoch(originalEpoch)
+            .setAssignedActiveTasks(originalAssigment)
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
-                mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                mkTaskAssignment(subtopologyId2, 4, 5, 7))))
-            .withCurrentActiveTaskEpoch((subtopologyId, __) ->
-                subtopologyId2.equals(subtopologyId) ? 10 : -1
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(bumpedEpoch, new Assignment(newAssignment))
+            .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> subtopologyId2.equals(subtopologyId) ? originalEpoch : -1
             )
             .withOwnedActiveTasks(Collections.emptyList())
             .build();
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
-                .setMemberEpoch(11)
-                .setPreviousMemberEpoch(10)
+                .setState(MemberState.UNRELEASED_TASKS)
+                .setMemberEpoch(bumpedEpoch)
+                .setPreviousMemberEpoch(originalEpoch)
                 .setAssignedActiveTasks(mkAssignment(
                     mkTaskAssignment(subtopologyId1, 1, 2, 3),
-                    mkTaskAssignment(subtopologyId2, 4, 5)))
+                    mkTaskAssignment(subtopologyId2, 10, 11)))
                 .build(),
             updatedMember
         );
@@ -213,7 +255,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+            .setState(MemberState.UNREVOKED_TASKS)
             .setMemberEpoch(10)
             .setPreviousMemberEpoch(10)
             .setAssignedActiveTasks(mkAssignment(
@@ -224,8 +266,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 4)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(11, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 2, 3),
                 mkTaskAssignment(subtopologyId2, 5, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1)
@@ -240,7 +282,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
+                .setState(MemberState.STABLE)
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(10)
                 .setAssignedActiveTasks(mkAssignment(
@@ -257,7 +299,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+            .setState(MemberState.UNREVOKED_TASKS)
             .setMemberEpoch(10)
             .setPreviousMemberEpoch(10)
             .setAssignedActiveTasks(mkAssignment(
@@ -268,9 +310,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 4)))
             .build();
 
-        org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder currentAssignmentBuilder = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(
-            member)
-            .withTargetAssignment(12, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        CurrentAssignmentBuilder currentAssignmentBuilder = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(12, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 3),
                 mkTaskAssignment(subtopologyId2, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1);
@@ -315,7 +356,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+            .setState(MemberState.UNREVOKED_TASKS)
             .setMemberEpoch(10)
             .setPreviousMemberEpoch(10)
             .setAssignedActiveTasks(mkAssignment(
@@ -326,8 +367,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 4)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(12, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(12, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 3),
                 mkTaskAssignment(subtopologyId2, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1)
@@ -342,7 +383,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+                .setState(MemberState.UNREVOKED_TASKS)
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(10)
                 .setAssignedActiveTasks(mkAssignment(
@@ -362,7 +403,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+            .setState(MemberState.UNREVOKED_TASKS)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(10)
             .setAssignedActiveTasks(mkAssignment(
@@ -370,8 +411,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 5, 6)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(11, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 2, 3, 4),
                 mkTaskAssignment(subtopologyId2, 5, 6, 7))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
@@ -386,7 +427,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
+                .setState(MemberState.UNRELEASED_TASKS)
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(11)
                 .setAssignedActiveTasks(mkAssignment(
@@ -403,7 +444,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
+            .setState(MemberState.UNRELEASED_TASKS)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(11)
             .setAssignedActiveTasks(mkAssignment(
@@ -411,8 +452,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 5, 6)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(12, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(12, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 2, 3),
                 mkTaskAssignment(subtopologyId2, 5, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
@@ -420,7 +461,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
+                .setState(MemberState.STABLE)
                 .setMemberEpoch(12)
                 .setPreviousMemberEpoch(11)
                 .setAssignedActiveTasks(mkAssignment(
@@ -437,7 +478,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
+            .setState(MemberState.UNRELEASED_TASKS)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(11)
             .setAssignedActiveTasks(mkAssignment(
@@ -445,8 +486,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 5, 6)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(11, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 2, 3, 4),
                 mkTaskAssignment(subtopologyId2, 5, 6, 7))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> -1)
@@ -454,7 +495,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
+                .setState(MemberState.STABLE)
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(11)
                 .setAssignedActiveTasks(mkAssignment(
@@ -471,7 +512,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
+            .setState(MemberState.UNRELEASED_TASKS)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(11)
             .setAssignedActiveTasks(mkAssignment(
@@ -479,8 +520,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 5, 6)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(11, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(11, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 2, 3, 4),
                 mkTaskAssignment(subtopologyId2, 5, 6, 7))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
@@ -495,7 +536,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
+            .setState(MemberState.UNRELEASED_TASKS)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(11)
             .setAssignedActiveTasks(mkAssignment(
@@ -503,8 +544,8 @@ public class CurrentAssignmentBuilderTest {
                 mkTaskAssignment(subtopologyId2, 5, 6)))
             .build();
 
-        StreamsGroupMember updatedMember = new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(12, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(12, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 3),
                 mkTaskAssignment(subtopologyId2, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
@@ -512,7 +553,7 @@ public class CurrentAssignmentBuilderTest {
 
         assertEquals(
             new StreamsGroupMember.Builder("member")
-                .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
+                .setState(MemberState.UNREVOKED_TASKS)
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(11)
                 .setAssignedActiveTasks(mkAssignment(
@@ -532,7 +573,7 @@ public class CurrentAssignmentBuilderTest {
         String subtopologyId2 = Uuid.randomUuid().toString();
 
         StreamsGroupMember member = new StreamsGroupMember.Builder("member")
-            .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNKNOWN)
+            .setState(MemberState.UNKNOWN)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(11)
             .setAssignedActiveTasks(mkAssignment(
@@ -545,8 +586,8 @@ public class CurrentAssignmentBuilderTest {
 
         // When the member is in an unknown state, the member is first to force
         // a reset of the client side member state.
-        assertThrows(FencedMemberEpochException.class, () -> new org.apache.kafka.coordinator.group.streams.CurrentAssignmentBuilder(member)
-            .withTargetAssignment(12, new org.apache.kafka.coordinator.group.streams.Assignment(mkAssignment(
+        assertThrows(FencedMemberEpochException.class, () -> new CurrentAssignmentBuilder(member)
+            .withTargetAssignment(12, new Assignment(mkAssignment(
                 mkTaskAssignment(subtopologyId1, 3),
                 mkTaskAssignment(subtopologyId2, 6))))
             .withCurrentActiveTaskEpoch((subtopologyId, partitionId) -> 10)
