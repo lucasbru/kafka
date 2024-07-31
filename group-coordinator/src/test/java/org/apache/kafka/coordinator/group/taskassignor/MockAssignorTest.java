@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -43,7 +44,8 @@ public class MockAssignorTest {
         final GroupAssignment result = assignor.assign(
             new GroupSpecImpl(
                 Collections.emptyMap(),
-                Collections.emptyList()
+                Collections.emptyList(),
+                new HashMap<>()
             ),
             x -> 5
         );
@@ -70,7 +72,8 @@ public class MockAssignorTest {
         final GroupAssignment result = assignor.assign(
             new GroupSpecImpl(
                 Collections.singletonMap("test_member", memberSpec),
-                Collections.singletonList("test-subtopology")
+                Collections.singletonList("test-subtopology"),
+                new HashMap<>()
             ),
             x -> 4
         );
@@ -114,7 +117,8 @@ public class MockAssignorTest {
         final GroupAssignment result = assignor.assign(
             new GroupSpecImpl(
                 mkMap(mkEntry("test_member1", memberSpec1), mkEntry("test_member2", memberSpec2)),
-                Arrays.asList("test-subtopology1", "test-subtopology2")
+                Arrays.asList("test-subtopology1", "test-subtopology2"),
+                new HashMap<>()
             ),
             x -> 4
         );
@@ -172,7 +176,8 @@ public class MockAssignorTest {
         final GroupAssignment result = assignor.assign(
             new GroupSpecImpl(
                 mkMap(mkEntry("test_member1", memberSpec1), mkEntry("test_member2", memberSpec2)),
-                Arrays.asList("test-subtopology1", "test-subtopology2")
+                Arrays.asList("test-subtopology1", "test-subtopology2"),
+                new HashMap<>()
             ),
             x -> 4
         );

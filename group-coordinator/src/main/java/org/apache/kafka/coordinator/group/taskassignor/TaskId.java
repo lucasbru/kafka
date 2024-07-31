@@ -63,4 +63,9 @@ public final class TaskId {
             ", partition=" + partition +
             '}';
     }
+
+    public int compareTo (TaskId other) {
+        return this.hashCode() - other.hashCode();
+    }
+
 }
