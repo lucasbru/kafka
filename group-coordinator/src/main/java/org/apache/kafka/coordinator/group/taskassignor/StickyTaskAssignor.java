@@ -16,11 +16,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class StickyAssignor implements TaskAssignor{
+public class StickyTaskAssignor implements TaskAssignor{
 
     public static final String STICKY_ASSIGNOR_NAME = "sticky";
     private final boolean mustPreserveActiveTaskAssignment;
-    private static final Logger log = LoggerFactory.getLogger(StickyAssignor.class);
+    private static final Logger log = LoggerFactory.getLogger(StickyTaskAssignor.class);
 
     // helper data structures:
     Map<String, String[]> subtopologyToActiveMember = new HashMap<>();
@@ -32,7 +32,7 @@ public class StickyAssignor implements TaskAssignor{
 
     int allTasks = 0;
     int totalCapacity = 0;
-    int tasksPerThread = 0;
+    int tasksPerMember = 0;
 
     // results/outputs:
 
@@ -47,7 +47,7 @@ public class StickyAssignor implements TaskAssignor{
     Map<String, Map<String, Set<Integer>>> activeTasksAssignments = new HashMap<>();
 
 
-    public StickyAssignor(boolean mustPreserveActiveTaskAssignment) {
+    public StickyTaskAssignor(boolean mustPreserveActiveTaskAssignment) {
         this.mustPreserveActiveTaskAssignment = mustPreserveActiveTaskAssignment;
     }
 
@@ -84,7 +84,7 @@ public class StickyAssignor implements TaskAssignor{
         }
 
         totalCapacity = groupSpec.members().size();
-        tasksPerThread = computeTasksPerThread(allTasks, totalCapacity);
+        tasksPerMember = computeTasksPerMember(allTasks, totalCapacity);
         taskPairs = new TaskPairs(allTasks * (allTasks - 1) / 2);
 
         for (Map.Entry<String, AssignmentMemberSpec> memberEntry : groupSpec.members().entrySet()) {
@@ -156,7 +156,7 @@ public class StickyAssignor implements TaskAssignor{
             maybeRemoveExtraTasks(activeTasks);
             activeTasksAssignments.put(memberId, activeTasks);
             updateHelpers(memberId, activeTasks);
-            maybeUpdateTasksPerThread(activeTasks.values().stream().mapToInt(Set::size).sum());
+            maybeUpdateTasksPerMember(activeTasks.values().stream().mapToInt(Set::size).sum());
         }
 
         // 2. re-assigning tasks to clients that previously have seen the same task (as standby task)
@@ -302,12 +302,12 @@ public class StickyAssignor implements TaskAssignor{
         activeTasksAssignments.get(memberId).put(subtopologyId, newSet);
     }
 
-    private void maybeUpdateTasksPerThread(int activeTasksCount) {
-        // update tasksPerThread: explanation
-        if (activeTasksCount == tasksPerThread) {
+    private void maybeUpdateTasksPerMember(int activeTasksCount) {
+        // update tasksPerMember: explanation
+        if (activeTasksCount == tasksPerMember) {
             totalCapacity --;
             allTasks -= activeTasksCount;
-            tasksPerThread = computeTasksPerThread(allTasks, totalCapacity);
+            tasksPerMember = computeTasksPerMember(allTasks, totalCapacity);
         }
     }
 
@@ -350,11 +350,11 @@ public class StickyAssignor implements TaskAssignor{
 
     private void maybeRemoveExtraTasks(Map<String, Set<Integer>> tasks) {
         int activeTasksCount = tasks.values().stream().mapToInt(Set::size).sum();
-        if (activeTasksCount > tasksPerThread) {
+        if (activeTasksCount > tasksPerMember) {
             int curActiveTasksCount = 0;
             for (Map.Entry<String, Set<Integer>> entry : tasks.entrySet()) {
-                int remaining = tasksPerThread - curActiveTasksCount;
-                if (curActiveTasksCount < tasksPerThread) {
+                int remaining = tasksPerMember - curActiveTasksCount;
+                if (curActiveTasksCount < tasksPerMember) {
                     entry.setValue(entry.getValue().stream()
                             .skip(0) // start offset
                             .limit(Math.min(remaining, entry.getValue().size()))
@@ -386,15 +386,15 @@ public class StickyAssignor implements TaskAssignor{
         }
     }
 
-    private int computeTasksPerThread(int allTasks, int totalCapacity) {
+    private int computeTasksPerMember(int allTasks, int totalCapacity) {
         if (totalCapacity == 0) {
             return 0;
         }
-        int tasksPerThread = allTasks / totalCapacity;
-        if (allTasks - (tasksPerThread * totalCapacity) > 0) {
-            tasksPerThread++;
+        int tasksPerMember = allTasks / totalCapacity;
+        if (allTasks - (tasksPerMember * totalCapacity) > 0) {
+            tasksPerMember++;
         }
-        return tasksPerThread;
+        return tasksPerMember;
     }
 
     private String findMemberWithLeastLoad(Set<String> members, String subtopologyId, int taskId, boolean isLimited) {
@@ -414,7 +414,7 @@ public class StickyAssignor implements TaskAssignor{
             Optional<String> minMember = processMembers.stream()
                     .min(Comparator.comparingInt(minProcessSpec.memberToTaskCounts()::get));
             if (isLimited) {
-                return minMember.filter(member -> minProcessSpec.memberToTaskCounts().get(member) + 1 <= tasksPerThread).orElse(null);
+                return minMember.filter(member -> minProcessSpec.memberToTaskCounts().get(member) + 1 <= tasksPerMember).orElse(null);
             }
             return minMember.orElse(null);
         }
