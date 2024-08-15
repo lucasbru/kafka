@@ -43,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class StickyTaskAssignorTest {
-    private final StickyTaskAssignor assignor = new StickyTaskAssignor(false);
+    private final StickyTaskAssignor assignor = new StickyTaskAssignor();
 
 
     @Test
@@ -1040,12 +1040,6 @@ public class StickyTaskAssignorTest {
         assertEquals(2, mem2Tasks.size());
 
         assertEquals(2, getAllActiveTaskIds(result, "newMember").size());
-    }
-
-    @Test
-    public void shouldViolateBalanceToPreserveActiveTaskStickiness() {
-        final AssignmentMemberSpec memberSpec1 = createAssignmentMemberSpec("process1", mkMap(mkEntry("test-subtopology", mkSet(0, 1, 2))), Collections.emptyMap());
-        final AssignmentMemberSpec memberSpec2 = createAssignmentMemberSpec("process2");
     }
 
 

@@ -65,6 +65,9 @@ public class StickyTaskAssignor implements TaskAssignor {
     Map<String, Map<String, Set<Integer>>> activeTasksAssignments = new HashMap<>();
 
 
+    public StickyTaskAssignor() {
+        this(false);
+    }
     public StickyTaskAssignor(boolean mustPreserveActiveTaskAssignment) {
         this.mustPreserveActiveTaskAssignment = mustPreserveActiveTaskAssignment;
     }
@@ -170,7 +173,9 @@ public class StickyTaskAssignor implements TaskAssignor {
             final AssignmentMemberSpec memberSpec = memberEntry.getValue();
 
             Map<String, Set<Integer>> activeTasks = new HashMap<>(memberSpec.activeTasks());
-            maybeRemoveExtraTasks(activeTasks);
+            if (!mustPreserveActiveTaskAssignment) {
+                maybeRemoveExtraTasks(activeTasks);
+            }
             activeTasksAssignments.put(memberId, activeTasks);
             updateHelpers(memberId, activeTasks);
             maybeUpdateTasksPerMember(activeTasks.values().stream().mapToInt(Set::size).sum());
