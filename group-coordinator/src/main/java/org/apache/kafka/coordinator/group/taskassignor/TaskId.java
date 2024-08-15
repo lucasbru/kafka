@@ -64,7 +64,7 @@ public final class TaskId {
             '}';
     }
 
-    public int compareTo (TaskId other) {
+    public int compareTo(TaskId other) {
         return this.hashCode() - other.hashCode();
     }
 

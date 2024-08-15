@@ -62,32 +62,32 @@ public class ProcessSpec {
         return assignedTasks;
     }
 
-    public void addTasks (String memberId, Map<String, Set<Integer>> newTasks) {
-        int taskCount = 0 ;
+    public void addTasks(String memberId, Map<String, Set<Integer>> newTasks) {
+        int taskCount = 0;
         for (Map.Entry<String, Set<Integer>> entry : newTasks.entrySet()) {
             String subtopologyId = entry.getKey();
             for (Integer id : entry.getValue()) {
                 //todo maybe double check if one task is assigned two times?!
                 assignedTasks.add(new TaskId(subtopologyId, id));
-                taskCount ++;
+                taskCount++;
             }
         }
         memberToTaskCounts.put(memberId, memberToTaskCounts.get(memberId) + taskCount);
         computeLoad();
     }
 
-    public void addTask (String memberId, String subtopology, int taskId) {
+    public void addTask(String memberId, String subtopology, int taskId) {
         assignedTasks.add(new TaskId(subtopology, taskId));
         memberToTaskCounts.put(memberId, memberToTaskCounts.get(memberId) + 1);
         computeLoad();
     }
 
-    private void incrementCapacity () {
-        capacity ++;
+    private void incrementCapacity() {
+        capacity++;
         computeLoad();
     }
-    public void computeLoad () {
-        if (capacity <= 0 ) {
+    public void computeLoad() {
+        if (capacity <= 0) {
             this.load = -1;
         } else {
             this.load = (double) assignedTasks.size() / capacity;
@@ -103,7 +103,7 @@ public class ProcessSpec {
         return assignedTasks.size() >= capacity;
     }
 
-    public int compareTo (ProcessSpec other) {
+    public int compareTo(ProcessSpec other) {
         int loadCompare = Double.compare(this.load, other.load());
         if (loadCompare == 0) {
             return Integer.compare(other.capacity, this.capacity);
@@ -111,10 +111,7 @@ public class ProcessSpec {
         return loadCompare;
     }
 
-    public boolean hasTask (String subtopologyId, int partition) {
+    public boolean hasTask(String subtopologyId, int partition) {
         return assignedTasks.contains(new TaskId(subtopologyId, partition));
     }
-
-
-
 }

@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.kafka.coordinator.group.taskassignor;
 
 
@@ -16,7 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class StickyTaskAssignor implements TaskAssignor{
+public class StickyTaskAssignor implements TaskAssignor {
 
     public static final String STICKY_ASSIGNOR_NAME = "sticky";
     private final boolean mustPreserveActiveTaskAssignment;
@@ -64,8 +81,7 @@ public class StickyTaskAssignor implements TaskAssignor{
         assignActive(groupSpec);
         //standby
         assignStandby(groupSpec, topologyDescriber);
-        //warm-up
-        // ...
+
         return buildGroupAssignment();
     }
 
@@ -79,8 +95,8 @@ public class StickyTaskAssignor implements TaskAssignor{
             subtopologyToActiveMember.put(subtopology, new String[numberOfPartitions]);
             subtopologyToPrevActiveMember.put(subtopology, new String[numberOfPartitions]);
 
-            HashSet<String>[] prevstandbyMembers = new HashSet[numberOfPartitions];
-            subtopologyToPrevStandbyMember.put(subtopology, prevstandbyMembers);
+            HashSet<String>[] prevStandbyMembers = new HashSet[numberOfPartitions];
+            subtopologyToPrevStandbyMember.put(subtopology, prevStandbyMembers);
         }
 
         totalCapacity = groupSpec.members().size();
@@ -163,7 +179,7 @@ public class StickyTaskAssignor implements TaskAssignor{
         for (Map.Entry<String, String[]> entry : subtopologyToActiveMember.entrySet()) {
             final String subtopologyId = entry.getKey();
             final String[] memberIds = entry.getValue();
-            for (int taskId =0; taskId < memberIds.length; taskId ++) {
+            for (int taskId = 0; taskId < memberIds.length; taskId++) {
                 if (memberIds[taskId] == null) {
                     Set<String> standbyMembers = subtopologyToPrevStandbyMember.get(subtopologyId)[taskId];
                     if (standbyMembers != null) {
@@ -201,19 +217,19 @@ public class StickyTaskAssignor implements TaskAssignor{
                 groupSpec.assignmentConfigs().isEmpty() ? 0
                         : Integer.parseInt(groupSpec.assignmentConfigs().get("numStandbyReplicas"));
 
-        Map<String, Set<Integer>> stateFulTasks = new HashMap<>();
+        Map<String, Set<Integer>> statefulTasks = new HashMap<>();
         for (String subtopology : groupSpec.subtopologies()) {
-            stateFulTasks.put(subtopology, topologyDescriber.statefulTaskIds(subtopology));
+            statefulTasks.put(subtopology, topologyDescriber.statefulTaskIds(subtopology));
         }
 
-        for (Map.Entry<String, Set<Integer>> task : stateFulTasks.entrySet()) {
+        for (Map.Entry<String, Set<Integer>> task : statefulTasks.entrySet()) {
             final String subtopologyId = task.getKey();
             for (int taskId : task.getValue()) {
                 for (int i = 0; i < numStandbyReplicas; i++) {
                     final Set<String> availableMembers = findMembersWithoutAssignedTask(subtopologyId, taskId);
                     if (availableMembers.isEmpty()) {
                         log.warn("Unable to assign " + (numStandbyReplicas - i) +
-                                " of " + numStandbyReplicas+" standby tasks for task [" + taskId + "]. " +
+                                " of " + numStandbyReplicas + " standby tasks for task [" + taskId + "]. " +
                                 "There is not enough available capacity. You should " +
                                 "increase the number of threads and/or application instances " +
                                 "to maintain the requested number of standby replicas.");
@@ -305,7 +321,7 @@ public class StickyTaskAssignor implements TaskAssignor{
     private void maybeUpdateTasksPerMember(int activeTasksCount) {
         // update tasksPerMember: explanation
         if (activeTasksCount == tasksPerMember) {
-            totalCapacity --;
+            totalCapacity--;
             allTasks -= activeTasksCount;
             tasksPerMember = computeTasksPerMember(allTasks, totalCapacity);
         }
@@ -324,7 +340,7 @@ public class StickyTaskAssignor implements TaskAssignor{
         for (Map.Entry<String, Set<Integer>> entry : tasks.entrySet()) {
             final String subtopologyId = entry.getKey();
             final Set<Integer> taskIds = entry.getValue();
-            final String[] activeMembers = subtopologyToActiveMember.get(subtopologyId);//new...maybe empty
+            final String[] activeMembers = subtopologyToActiveMember.get(subtopologyId);
             if (activeMembers != null) {
                 for (int taskId : taskIds) {
                     if (taskId < activeMembers.length) {
@@ -403,11 +419,11 @@ public class StickyTaskAssignor implements TaskAssignor{
             processes.add(memberIdToProcessId.get(member));
         }
         // find the set of right pairs
-        Set<String> rightPairs = findRightPairs (processes, new TaskId(subtopologyId, taskId));
+        Set<String> rightPairs = findRightPairs(processes, new TaskId(subtopologyId, taskId));
         if (rightPairs.isEmpty()) {
             rightPairs = processes;
         }
-        ProcessSpec minProcessSpec = findProcessWithLeastLoad (rightPairs);
+        ProcessSpec minProcessSpec = findProcessWithLeastLoad(rightPairs);
 
         if (minProcessSpec.processId() != null) {
             Set<String> processMembers = minProcessSpec.memberToTaskCounts().keySet();

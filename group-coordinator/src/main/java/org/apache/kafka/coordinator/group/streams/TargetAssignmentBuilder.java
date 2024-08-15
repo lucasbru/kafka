@@ -307,6 +307,7 @@ public class TargetAssignmentBuilder {
                 new GroupSpecImpl(
                     Collections.unmodifiableMap(memberSpecs),
                     new ArrayList<>(topology.subtopologies().keySet()),
+                    // TODO: replace the empty map
                     new HashMap<>()
                 ),
                 new TopologyMetadata(subscriptionMetadata, topology)
