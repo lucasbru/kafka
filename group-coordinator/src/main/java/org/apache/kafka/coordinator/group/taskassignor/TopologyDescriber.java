@@ -18,9 +18,6 @@ package org.apache.kafka.coordinator.group.taskassignor;
 
 import org.apache.kafka.common.annotation.InterfaceStability;
 
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * The subscribed topic describer is used by the {@link TaskAssignor} to obtain topic and task metadata of the subscribed topics.
  * <p>
@@ -37,8 +34,5 @@ public interface TopologyDescriber {
      */
     int numPartitions(String subtopologyId);
 
-    default Set<Integer> statefulTaskIds(String subtopologyId) {
-        return new HashSet<>();
-    }
-
+    boolean isStateful(String subtopologyId);
 }

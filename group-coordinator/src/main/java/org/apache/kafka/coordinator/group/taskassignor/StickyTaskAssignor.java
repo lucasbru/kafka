@@ -32,6 +32,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class StickyTaskAssignor implements TaskAssignor {
 
@@ -219,7 +220,11 @@ public class StickyTaskAssignor implements TaskAssignor {
 
         Map<String, Set<Integer>> statefulTasks = new HashMap<>();
         for (String subtopology : groupSpec.subtopologies()) {
-            statefulTasks.put(subtopology, topologyDescriber.statefulTaskIds(subtopology));
+            Set<Integer> partitions = new HashSet<>();
+            if (topologyDescriber.isStateful(subtopology)) {
+                IntStream.range(0, topologyDescriber.numPartitions(subtopology)).forEach(partitions::add);
+            }
+            statefulTasks.put(subtopology, partitions);
         }
 
         for (Map.Entry<String, Set<Integer>> task : statefulTasks.entrySet()) {
