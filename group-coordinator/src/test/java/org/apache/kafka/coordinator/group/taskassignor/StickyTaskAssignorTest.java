@@ -644,7 +644,7 @@ public class StickyTaskAssignorTest {
         assertEquals(4, getAllActiveTaskCount(result, "member1"));
     }
 
-    @Test//todo rack-aware
+    @Test
     public void shouldEvenlyDistributeByTaskIdAndPartition() {
         final AssignmentMemberSpec memberSpec11 = createAssignmentMemberSpec("process1");
         final AssignmentMemberSpec memberSpec12 = createAssignmentMemberSpec("process1");
@@ -921,7 +921,6 @@ public class StickyTaskAssignorTest {
                 new GroupSpecImpl(members, Arrays.asList("test-subtopology0", "test-subtopology1", "test-subtopology2"), new HashMap<>()),
                 new TopologyDescriberImpl(4, false)
         );
-        //todo rackaware
 
         assertEquals(mkMap(mkEntry("test-subtopology0", mkSet(1)), mkEntry("test-subtopology1", mkSet(2, 3))),
                 getAllActiveTasks(result, "member1"));
@@ -960,9 +959,6 @@ public class StickyTaskAssignorTest {
                 new GroupSpecImpl(members, Arrays.asList("test-subtopology0", "test-subtopology1", "test-subtopology2"), new HashMap<>()),
                 new TopologyDescriberImpl(4, false)
         );
-
-        //todo rack-aware
-
 
 
         assertEquals(mkMap(mkEntry("test-subtopology0", mkSet(1)), mkEntry("test-subtopology1", mkSet(2, 3))),
@@ -1046,28 +1042,11 @@ public class StickyTaskAssignorTest {
         assertEquals(2, getAllActiveTaskIds(result, "newMember").size());
     }
 
-    @Test//todo rack aware
+    @Test
     public void shouldViolateBalanceToPreserveActiveTaskStickiness() {
         final AssignmentMemberSpec memberSpec1 = createAssignmentMemberSpec("process1", mkMap(mkEntry("test-subtopology", mkSet(0, 1, 2))), Collections.emptyMap());
         final AssignmentMemberSpec memberSpec2 = createAssignmentMemberSpec("process2");
     }
-
-    @Test//todo rack aware
-    public void shouldOptimizeStatefulAndStatelessTaskTraffic() {}
-
-    @Test//todo rack aware
-    public void shouldAssignRandomInput() {}
-
-    @Test//todo rack aware
-    public void shouldRemainOriginalAssignmentWithoutTrafficCostForMinCostStrategy() {}
-
-
-
-
-
-
-
-
 
 
     private int getAllActiveTaskCount(GroupAssignment result, String... memberIds) {
