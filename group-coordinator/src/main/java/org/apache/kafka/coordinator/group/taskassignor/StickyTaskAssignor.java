@@ -43,7 +43,7 @@ public class StickyTaskAssignor implements TaskAssignor {
     // helper data structures:
     Map<String, String[]> subtopologyToActiveMember = new HashMap<>();
     private TaskPairs taskPairs;
-    Map<String, ProcessSpec> processIdToProcessSpec = new HashMap<>();
+    Map<String, ProcessState> processIdToProcessSpec = new HashMap<>();
     Map<String, String> memberIdToProcessId = new HashMap<>();
     Map<String, String[]> subtopologyToPrevActiveMember = new HashMap<>();
     Map<String, Set<String>[]> subtopologyToPrevStandbyMember = new HashMap<>();
@@ -109,7 +109,7 @@ public class StickyTaskAssignor implements TaskAssignor {
             final AssignmentMemberSpec memberSpec = memberEntry.getValue();
 
             memberIdToProcessId.put(memberId, memberSpec.processId());
-            processIdToProcessSpec.putIfAbsent(memberSpec.processId(), new ProcessSpec(memberSpec.processId()));
+            processIdToProcessSpec.putIfAbsent(memberSpec.processId(), new ProcessState(memberSpec.processId()));
             processIdToProcessSpec.get(memberSpec.processId()).addMember(memberId);
 
 
@@ -277,13 +277,13 @@ public class StickyTaskAssignor implements TaskAssignor {
     }
 
     private boolean shouldBalanceLoad(String memberId) {
-        final ProcessSpec processSpec = processIdToProcessSpec.get(memberIdToProcessId.get(memberId));
+        final ProcessState processSpec = processIdToProcessSpec.get(memberIdToProcessId.get(memberId));
         return processSpec.reachedCapacity() && hasNodesWithMoreAvailableCapacity(processSpec.processId());
     }
 
     private boolean hasNodesWithMoreAvailableCapacity(String processId) {
-        final ProcessSpec processSpec = processIdToProcessSpec.get(processId);
-        final ProcessSpec minProcessSpec = findProcessWithLeastLoad(processIdToProcessSpec.keySet());
+        final ProcessState processSpec = processIdToProcessSpec.get(processId);
+        final ProcessState minProcessSpec = findProcessWithLeastLoad(processIdToProcessSpec.keySet());
         return !(Objects.equals(processSpec.processId(), minProcessSpec.processId()));
     }
 
@@ -310,7 +310,7 @@ public class StickyTaskAssignor implements TaskAssignor {
 
     private Set<String> findMembersWithoutAssignedTask(String subtopologyId, int taskId) {
         Set<String> availableMembers = new HashSet<>();
-        for (ProcessSpec processSpec : processIdToProcessSpec.values()) {
+        for (ProcessState processSpec : processIdToProcessSpec.values()) {
             if (!processSpec.hasTask(subtopologyId, taskId))
                 availableMembers.addAll(processSpec.memberToTaskCounts().keySet());
         }
@@ -428,7 +428,7 @@ public class StickyTaskAssignor implements TaskAssignor {
         if (rightPairs.isEmpty()) {
             rightPairs = processes;
         }
-        ProcessSpec minProcessSpec = findProcessWithLeastLoad(rightPairs);
+        ProcessState minProcessSpec = findProcessWithLeastLoad(rightPairs);
 
         if (minProcessSpec.processId() != null) {
             Set<String> processMembers = minProcessSpec.memberToTaskCounts().keySet();
@@ -445,7 +445,7 @@ public class StickyTaskAssignor implements TaskAssignor {
     private Set<String> findRightPairs(Set<String> processes, TaskId task) {
         Set<String> rightPairs = new HashSet<>();
         for (String processId : processes) {
-            final ProcessSpec processSpec = processIdToProcessSpec.get(processId);
+            final ProcessState processSpec = processIdToProcessSpec.get(processId);
             if (taskPairs.hasNewPair(task, processSpec.assignedTasks())) {
                 rightPairs.add(processId);
             }
@@ -454,10 +454,10 @@ public class StickyTaskAssignor implements TaskAssignor {
     }
 
 
-    private ProcessSpec findProcessWithLeastLoad(Set<String> processes) {
-        ProcessSpec minProcessSpec = new ProcessSpec(null);
+    private ProcessState findProcessWithLeastLoad(Set<String> processes) {
+        ProcessState minProcessSpec = new ProcessState(null);
         for (String processId : processes) {
-            final ProcessSpec processSpec = processIdToProcessSpec.get(processId);
+            final ProcessState processSpec = processIdToProcessSpec.get(processId);
             if (minProcessSpec.compareTo(processSpec) >= 0)
                 minProcessSpec = processSpec;
         }

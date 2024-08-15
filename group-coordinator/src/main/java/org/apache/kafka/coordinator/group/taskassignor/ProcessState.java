@@ -21,7 +21,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class ProcessSpec {
+public class ProcessState {
     private final String processId;
     private int capacity;
     private double load;
@@ -29,7 +29,7 @@ public class ProcessSpec {
 
     private final Set<TaskId> assignedTasks;
 
-    ProcessSpec(String processId) {
+    ProcessState(String processId) {
         this.processId = processId;
         this.capacity = 0;
         this.load = Double.MAX_VALUE;
@@ -103,7 +103,7 @@ public class ProcessSpec {
         return assignedTasks.size() >= capacity;
     }
 
-    public int compareTo(ProcessSpec other) {
+    public int compareTo(ProcessState other) {
         int loadCompare = Double.compare(this.load, other.load());
         if (loadCompare == 0) {
             return Integer.compare(other.capacity, this.capacity);
