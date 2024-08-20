@@ -79,6 +79,12 @@ public class TopologyMetadata implements TopologyDescriber {
     }
 
     @Override
+    public boolean isStateful(String subtopologyId) {
+        //TODO
+        return false;
+    }
+
+    @Override
     public boolean equals(final Object o) {
         if (this == o) {
             return true;

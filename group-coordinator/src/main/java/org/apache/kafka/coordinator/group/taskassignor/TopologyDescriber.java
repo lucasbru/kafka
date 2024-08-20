@@ -34,4 +34,5 @@ public interface TopologyDescriber {
      */
     int numPartitions(String subtopologyId);
 
+    boolean isStateful(String subtopologyId);
 }
