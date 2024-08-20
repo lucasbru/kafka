@@ -197,7 +197,7 @@ public class MockAssignorTest {
         ), testMember2.activeTasks());
     }
 
-    class TopologyDescriberImpl implements TopologyDescriber {
+    static class TopologyDescriberImpl implements TopologyDescriber {
         final int numPartitions;
 
         TopologyDescriberImpl(int numPartitions) {
