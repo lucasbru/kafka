@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.util.Collections.unmodifiableSet;
 import static org.apache.kafka.common.utils.Utils.union;
@@ -30,17 +31,16 @@ public class ProcessState {
     private int capacity;
     private double load;
     private final Map<String, Integer> memberToTaskCounts;
-
-    private final Set<TaskId> assignedActiveTasks;
-    private final Set<TaskId> assignedStandbyTasks;
+    private final Map<String, Set<TaskId>> assignedActiveTasks;
+    private final Map<String, Set<TaskId>> assignedStandbyTasks;
 
 
     ProcessState(final String processId) {
         this.processId = processId;
         this.capacity = 0;
         this.load = Double.MAX_VALUE;
-        this.assignedActiveTasks = new HashSet<>();
-        this.assignedStandbyTasks = new HashSet<>();
+        this.assignedActiveTasks = new HashMap<>();
+        this.assignedStandbyTasks = new HashMap<>();
         this.memberToTaskCounts = new HashMap<>();
     }
 
@@ -54,7 +54,7 @@ public class ProcessState {
     }
 
     public int totalTaskCount() {
-        return assignedStandbyTasks.size() + assignedActiveTasks.size();
+        return assignedStandbyTasks().size() + assignedActiveTasks().size();
     }
 
     public double load() {
@@ -66,18 +66,32 @@ public class ProcessState {
     }
 
     public Set<TaskId> assignedActiveTasks() {
+        return assignedActiveTasks.values().stream()
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+    }
+
+    public Map<String, Set<TaskId>> assignedActiveTasksByMember() {
         return assignedActiveTasks;
     }
 
     public Set<TaskId> assignedStandbyTasks() {
+        return assignedStandbyTasks.values().stream()
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+    }
+
+    public Map<String, Set<TaskId>> assignedStandbyTasksByMember() {
         return assignedStandbyTasks;
     }
 
     public void addTask(final String memberId, final TaskId taskId, final boolean isActive) {
         if (isActive) {
-            assignedActiveTasks.add(taskId);
+            assignedActiveTasks.putIfAbsent(memberId, new HashSet<>());
+            assignedActiveTasks.get(memberId).add(taskId);
         } else {
-            assignedStandbyTasks.add(taskId);
+            assignedStandbyTasks.putIfAbsent(memberId, new HashSet<>());
+            assignedStandbyTasks.get(memberId).add(taskId);
         }
         memberToTaskCounts.put(memberId, memberToTaskCounts.get(memberId) + 1);
         computeLoad();
@@ -113,7 +127,7 @@ public class ProcessState {
     }
 
     public boolean hasTask(final TaskId taskId) {
-        return assignedActiveTasks.contains(taskId) || assignedStandbyTasks.contains(taskId);    }
+        return assignedActiveTasks().contains(taskId) || assignedStandbyTasks().contains(taskId);    }
 
 
     Set<TaskId> assignedTasks() {
