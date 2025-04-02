@@ -22,7 +22,10 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -34,21 +37,22 @@ import org.apache.kafka.streams.kstream.JoinWindows;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.ValueJoiner;
 import org.apache.kafka.test.TestUtils;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 
@@ -65,11 +69,12 @@ import static org.hamcrest.core.IsEqual.equalTo;
 public class KStreamKStreamIntegrationTest {
     private static final int NUM_BROKERS = 1;
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
-    private static final MockTime MOCK_TIME = CLUSTER.time;
-    private static final String LEFT_STREAM = "leftStream";
-    private static final String RIGHT_STREAM = "rightStream";
-    private static final String OUTPUT = "output";
+    public static EmbeddedKafkaCluster cluster;
+    private static MockTime mockTime;
+    private static String output = "output";
+    private static String leftStream = "leftStream";
+    private static String rightStream = "rightStream";
+
     private Properties streamsConfig;
     private KafkaStreams streams;
     private static final Properties CONSUMER_CONFIG = new Properties();
@@ -77,31 +82,40 @@ public class KStreamKStreamIntegrationTest {
 
     @BeforeAll
     public static void startCluster() throws Exception {
-        CLUSTER.start();
+        final Properties props = new Properties();
+        props.setProperty(GroupCoordinatorConfig.GROUP_COORDINATOR_REBALANCE_PROTOCOLS_CONFIG, "classic,consumer,streams");
+        props.setProperty(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true");
+        cluster = new EmbeddedKafkaCluster(NUM_BROKERS, props);
+        cluster.start();
 
-        //Use multiple partitions to ensure distribution of keys.
-        CLUSTER.createTopic(LEFT_STREAM, 4, 1);
-        CLUSTER.createTopic(RIGHT_STREAM, 4, 1);
-        CLUSTER.createTopic(OUTPUT, 4, 1);
-
-        CONSUMER_CONFIG.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
+        CONSUMER_CONFIG.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
         CONSUMER_CONFIG.put(ConsumerConfig.GROUP_ID_CONFIG, "result-consumer");
         CONSUMER_CONFIG.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         CONSUMER_CONFIG.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+
+        mockTime = cluster.time;
     }
 
     @AfterAll
     public static void closeCluster() {
-        CLUSTER.stop();
+        cluster.stop();
     }
 
     @BeforeEach
-    public void before(final TestInfo testInfo) throws IOException {
+    public void before(final TestInfo testInfo) throws Exception {
         final String stateDirBasePath = TestUtils.tempDirectory().getPath();
         final String safeTestName = safeUniqueTestName(testInfo);
         streamsConfig = getStreamsConfig(safeTestName);
         streamsConfig.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath);
         streamsConfig.put(InternalConfig.EMIT_INTERVAL_MS_KSTREAMS_OUTER_JOIN_SPURIOUS_RESULTS_FIX, 0L);
+
+        //Use multiple partitions to ensure distribution of keys.
+        output = "output_" + safeTestName; // ensure unique output topic name for this test case
+        leftStream = "leftStream_" + safeTestName;
+        rightStream = "rightStream_" + safeTestName;
+        cluster.createTopic(leftStream, 4, 1);
+        cluster.createTopic(rightStream, 4, 1);
+        cluster.createTopic(output, 4, 1);
     }
 
     @AfterEach
@@ -113,8 +127,12 @@ public class KStreamKStreamIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfig);
     }
 
-    @Test
-    public void shouldOuterJoin() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void shouldOuterJoin(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         final Set<KeyValue<String, String>> expected = new HashSet<>();
         expected.add(new KeyValue<>("Key-1", "value1=left-1a,value2=null"));
         expected.add(new KeyValue<>("Key-2", "value1=left-2a,value2=null"));
@@ -130,7 +148,7 @@ public class KStreamKStreamIntegrationTest {
 
         startApplicationAndWaitUntilRunning(Collections.singletonList(streams), ofSeconds(120));
 
-        PRODUCER_CONFIG.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
+        PRODUCER_CONFIG.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
         PRODUCER_CONFIG.put(ProducerConfig.ACKS_CONFIG, "all");
         PRODUCER_CONFIG.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         PRODUCER_CONFIG.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -150,13 +168,13 @@ public class KStreamKStreamIntegrationTest {
                 new KeyValue<>("Key-4", "left-4b")
         );
 
-        IntegrationTestUtils.produceKeyValuesSynchronously(LEFT_STREAM, left1, PRODUCER_CONFIG, MOCK_TIME);
-        MOCK_TIME.sleep(10000);
-        IntegrationTestUtils.produceKeyValuesSynchronously(LEFT_STREAM, left2, PRODUCER_CONFIG, MOCK_TIME);
+        IntegrationTestUtils.produceKeyValuesSynchronously(leftStream, left1, PRODUCER_CONFIG, mockTime);
+        mockTime.sleep(10000);
+        IntegrationTestUtils.produceKeyValuesSynchronously(leftStream, left2, PRODUCER_CONFIG, mockTime);
 
         final Set<KeyValue<String, String>> result = new HashSet<>(waitUntilMinKeyValueRecordsReceived(
             CONSUMER_CONFIG,
-            OUTPUT,
+            output,
             expectedResult.size()));
 
         assertThat(expectedResult, equalTo(result));
@@ -165,7 +183,7 @@ public class KStreamKStreamIntegrationTest {
     private Properties getStreamsConfig(final String testName) {
         final Properties streamsConfig = new Properties();
         streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "KStream-KStream-join" + testName);
-        streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
+        streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
         streamsConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100L);
         streamsConfig.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
@@ -177,12 +195,12 @@ public class KStreamKStreamIntegrationTest {
     private static KafkaStreams prepareTopology(final Properties streamsConfig) {
         final StreamsBuilder builder = new StreamsBuilder();
 
-        final KStream<String, String> stream1 = builder.stream(LEFT_STREAM);
-        final KStream<String, String> stream2 = builder.stream(RIGHT_STREAM);
+        final KStream<String, String> stream1 = builder.stream(leftStream);
+        final KStream<String, String> stream2 = builder.stream(rightStream);
 
         final ValueJoiner<String, String, String> joiner = (value1, value2) -> "value1=" + value1 + ",value2=" + value2;
 
-        stream1.outerJoin(stream2, joiner, JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofMillis(10))).to(OUTPUT);
+        stream1.outerJoin(stream2, joiner, JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofMillis(10))).to(output);
 
         return new KafkaStreams(builder.build(streamsConfig), streamsConfig);
     }
