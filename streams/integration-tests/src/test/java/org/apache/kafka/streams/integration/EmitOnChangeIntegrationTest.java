@@ -22,6 +22,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -31,17 +32,18 @@ import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
 import org.apache.kafka.streams.integration.utils.IntegrationTestUtils;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.test.TestUtils;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -53,7 +55,7 @@ import static org.apache.kafka.streams.utils.TestUtils.safeUniqueTestName;
 @Timeout(600)
 @Tag("integration")
 public class EmitOnChangeIntegrationTest {
-    private static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    private static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -82,8 +84,9 @@ public class EmitOnChangeIntegrationTest {
         IntegrationTestUtils.cleanStateBeforeTest(CLUSTER, inputTopic, outputTopic, inputTopic2, outputTopic2);
     }
 
-    @Test
-    public void shouldEmitSameRecordAfterFailover() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldEmitSameRecordAfterFailover(boolean streamsProtocolEnabled) throws Exception {
         final Properties properties  = mkObjectProperties(
             mkMap(
                 mkEntry(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers()),
@@ -97,6 +100,9 @@ public class EmitOnChangeIntegrationTest {
                 mkEntry(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 10000)
             )
         );
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         final AtomicBoolean shouldThrow = new AtomicBoolean(true);
         final StreamsBuilder builder = new StreamsBuilder();

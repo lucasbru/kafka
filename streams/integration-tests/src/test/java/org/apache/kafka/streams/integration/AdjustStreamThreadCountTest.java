@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.LogCaptureAppender;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
@@ -34,7 +35,6 @@ import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
 import org.apache.kafka.streams.processor.internals.StreamThread;
 import org.apache.kafka.test.TestUtils;
-
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -44,11 +44,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -77,7 +80,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 @Timeout(600)
 @Tag("integration")
 public class AdjustStreamThreadCountTest {
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -101,7 +104,7 @@ public class AdjustStreamThreadCountTest {
         final String testId = safeUniqueTestName(testInfo);
         appId = "appId_" + testId;
         inputTopic = "input" + testId;
-        IntegrationTestUtils.cleanStateBeforeTest(CLUSTER, inputTopic);
+        IntegrationTestUtils.cleanStateBeforeTest(CLUSTER, 2, inputTopic);
 
         builder = new StreamsBuilder();
         builder.stream(inputTopic);
@@ -155,8 +158,12 @@ public class AdjustStreamThreadCountTest {
                 stateTransitionHistory.get(historySize - 1).equals(KafkaStreams.State.RUNNING), is(true));
     }
 
-    @Test
-    public void shouldAddStreamThread() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldAddStreamThread(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -187,8 +194,12 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void shouldRemoveStreamThread() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldRemoveStreamThread(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -202,6 +213,7 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
+    // Not enabled for KIP-1071, due to missing support for static membership
     @Test
     public void shouldRemoveStreamThreadWithStaticMembership() throws Exception {
         properties.put(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG, "member-A");
@@ -218,8 +230,12 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void shouldnNotRemoveStreamThreadWithinTimeout() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldnNotRemoveStreamThreadWithinTimeout(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -227,8 +243,12 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void shouldAddAndRemoveThreadsMultipleTimes() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldAddAndRemoveThreadsMultipleTimes(boolean streamsProtocolEnabled) throws InterruptedException {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -258,8 +278,12 @@ public class AdjustStreamThreadCountTest {
         });
     }
 
-    @Test
-    public void testRebalanceHappensBeforeStreamThreadGetDown() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testRebalanceHappensBeforeStreamThreadGetDown(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreamsWrapper kafkaStreams = new KafkaStreamsWrapper(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -289,8 +313,12 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void shouldAddAndRemoveStreamThreadsWhileKeepingNamesCorrect() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldAddAndRemoveStreamThreadsWhileKeepingNamesCorrect(boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -365,8 +393,12 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void testConcurrentlyAccessThreads() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testConcurrentlyAccessThreads(boolean streamsProtocolEnabled) throws InterruptedException {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), properties)) {
             addStreamStateChangeListener(kafkaStreams);
             startStreamsAndWaitForRunning(kafkaStreams);
@@ -397,13 +429,17 @@ public class AdjustStreamThreadCountTest {
         }
     }
 
-    @Test
-    public void shouldResizeCacheAfterThreadRemovalTimesOut() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldResizeCacheAfterThreadRemovalTimesOut(boolean streamsProtocolEnabled) throws InterruptedException {
         final long totalCacheBytes = 10L;
         final Properties props = new Properties();
         props.putAll(properties);
         props.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 2);
         props.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, totalCacheBytes);
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         try (final KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), props)) {
             addStreamStateChangeListener(kafkaStreams);
@@ -423,8 +459,12 @@ public class AdjustStreamThreadCountTest {
         fail();
     }
 
-    @Test
-    public void shouldResizeCacheAfterThreadReplacement() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldResizeCacheAfterThreadReplacement(boolean streamsProtocolEnabled) throws InterruptedException {
+        if (streamsProtocolEnabled) {
+            properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         final long totalCacheBytes = 10L;
         final Properties props = new Properties();
         props.putAll(properties);
