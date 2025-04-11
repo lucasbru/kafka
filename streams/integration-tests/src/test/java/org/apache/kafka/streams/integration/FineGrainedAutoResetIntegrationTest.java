@@ -26,6 +26,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.server.util.MockTime;
 import org.apache.kafka.streams.AutoOffsetReset;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -44,8 +45,10 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -54,6 +57,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
@@ -77,7 +81,7 @@ public class FineGrainedAutoResetIntegrationTest {
     private static final String OUTPUT_TOPIC_4 = "outputTopic_4";
     private static final String OUTPUT_TOPIC_5 = "outputTopic_5";
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(
             NUM_BROKERS,
             mkProperties(
                     Collections.singletonMap("log.message.timestamp.after.max.ms", String.valueOf(Long.MAX_VALUE))));
@@ -156,7 +160,7 @@ public class FineGrainedAutoResetIntegrationTest {
     private final String topicZTestMessage = "topic-Z test";
 
     @BeforeEach
-    public void setUp() throws Exception {
+    public void setUp(TestInfo testInfo) throws Exception {
 
         final Properties props = new Properties();
         props.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, 0);
@@ -170,27 +174,33 @@ public class FineGrainedAutoResetIntegrationTest {
                 STRING_SERDE_CLASSNAME,
                 STRING_SERDE_CLASSNAME,
                 props);
+        if (testInfo.getDisplayName().contains("streamsProtocolEnabled=true")) {
+            streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         // Remove any state from previous test runs
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfiguration);
     }
 
-    @Test
-    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithGlobalAutoOffsetResetLatest() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithGlobalAutoOffsetResetLatest(final boolean streamsProtocolEnabled) throws Exception {
         streamsConfiguration.put(StreamsConfig.consumerPrefix(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG), "latest");
 
         final List<String> expectedReceivedValues = Arrays.asList(topic1TestMessage, topic2TestMessage);
         shouldOnlyReadForEarliest("_0", TOPIC_1_0, TOPIC_2_0, TOPIC_A_0, TOPIC_C_0, TOPIC_Y_0, TOPIC_Z_0, OUTPUT_TOPIC_0, expectedReceivedValues);
     }
 
-    @Test
-    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithDefaultGlobalAutoOffsetResetEarliest() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithDefaultGlobalAutoOffsetResetEarliest(final boolean streamsProtocolEnabled) throws Exception {
         final List<String> expectedReceivedValues = Arrays.asList(topic1TestMessage, topic2TestMessage, topicYTestMessage, topicZTestMessage);
         shouldOnlyReadForEarliest("_1", TOPIC_1_1, TOPIC_2_1, TOPIC_A_1, TOPIC_C_1, TOPIC_Y_1, TOPIC_Z_1, OUTPUT_TOPIC_1, expectedReceivedValues);
     }
 
-    @Test
-    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithInvalidCommittedOffsets() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithInvalidCommittedOffsets(final boolean streamsProtocolEnabled) throws Exception {
         commitInvalidOffsets();
 
         final List<String> expectedReceivedValues = Arrays.asList(topic1TestMessage, topic2TestMessage, topicYTestMessage, topicZTestMessage);
@@ -267,8 +277,9 @@ public class FineGrainedAutoResetIntegrationTest {
         consumer.close();
     }
 
-    @Test
-    public void shouldFailForResetNone() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldFailForResetNone(final boolean streamsProtocolEnabled) throws Exception {
         final Properties props = new Properties();
         props.put(ConsumerConfig.METADATA_MAX_AGE_CONFIG, "1000");
 
@@ -297,8 +308,9 @@ public class FineGrainedAutoResetIntegrationTest {
         }
     }
 
-    @Test
-    public void shouldResetByDuration() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldResetByDuration(final boolean streamsProtocolEnabled) throws Exception {
         final StreamsBuilder builder = new StreamsBuilder();
 
         builder.<String, String>stream(TOPIC_DURATION_1, Consumed.with(AutoOffsetReset.byDuration(Duration.ofHours(6L).plus(Duration.ofMinutes(40L)))))
@@ -361,8 +373,9 @@ public class FineGrainedAutoResetIntegrationTest {
         assertThat(actualValuesThree, equalTo(singleFinalExpectedValues));
     }
 
-    @Test
-    public void shouldThrowExceptionOverlappingPattern() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldThrowExceptionOverlappingPattern(final boolean streamsProtocolEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         //NOTE this would realistically get caught when building topology, the test is for completeness
         builder.stream(Pattern.compile("topic-[A-D]_1"), Consumed.with(AutoOffsetReset.earliest()));
@@ -376,8 +389,9 @@ public class FineGrainedAutoResetIntegrationTest {
         }
     }
 
-    @Test
-    public void shouldThrowExceptionOverlappingTopic() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldThrowExceptionOverlappingTopic(final boolean streamsProtocolEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         //NOTE this would realistically get caught when building topology, the test is for completeness
         builder.stream(Pattern.compile("topic-[A-D]_1"), Consumed.with(AutoOffsetReset.earliest()));
@@ -390,8 +404,9 @@ public class FineGrainedAutoResetIntegrationTest {
         }
     }
 
-    @Test
-    public void shouldThrowStreamsExceptionNoResetSpecified() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldThrowStreamsExceptionNoResetSpecified(final boolean streamsProtocolEnabled) throws InterruptedException {
         final Properties props = new Properties();
         props.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, 0);
         props.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100L);

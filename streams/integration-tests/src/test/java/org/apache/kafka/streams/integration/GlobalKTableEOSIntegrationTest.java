@@ -24,6 +24,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -50,9 +51,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
 import java.io.IOException;
@@ -60,6 +62,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
@@ -81,7 +84,7 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     public static final EmbeddedKafkaCluster CLUSTER =
-            new EmbeddedKafkaCluster(NUM_BROKERS, BROKER_CONFIG);
+            EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS, BROKER_CONFIG);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -142,12 +145,13 @@ public class GlobalKTableEOSIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfiguration);
     }
 
-    @Test
-    public void shouldKStreamGlobalKTableLeftJoin() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldKStreamGlobalKTableLeftJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.leftJoin(globalTable, keyMapper, joiner);
         streamTableJoin.foreach(foreachAction);
         produceInitialGlobalTableValues();
-        startStreams();
+        startStreams(streamsProtocolEnabled);
         produceTopicValues(streamTopic);
 
         final Map<String, String> expected = new HashMap<>();
@@ -213,12 +217,13 @@ public class GlobalKTableEOSIntegrationTest {
         );
     }
 
-    @Test
-    public void shouldKStreamGlobalKTableJoin() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldKStreamGlobalKTableJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.join(globalTable, keyMapper, joiner);
         streamTableJoin.foreach(foreachAction);
         produceInitialGlobalTableValues();
-        startStreams();
+        startStreams(streamsProtocolEnabled);
         produceTopicValues(streamTopic);
 
         final Map<String, String> expected = new HashMap<>();
@@ -283,11 +288,12 @@ public class GlobalKTableEOSIntegrationTest {
         );
     }
 
-    @Test
-    public void shouldRestoreTransactionalMessages() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldRestoreTransactionalMessages(final boolean streamsProtocolEnabled) throws Exception {
         produceInitialGlobalTableValues();
 
-        startStreams();
+        startStreams(streamsProtocolEnabled);
 
         final Map<Long, String> expected = new HashMap<>();
         expected.put(1L, "A");
@@ -315,17 +321,20 @@ public class GlobalKTableEOSIntegrationTest {
         );
     }
 
-    @Test
-    public void shouldSkipOverTxMarkersOnRestore() throws Exception {
-        shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(false);
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldSkipOverTxMarkersOnRestore(final boolean streamsProtocolEnabled) throws Exception {
+        shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(false, streamsProtocolEnabled);
     }
 
-    @Test
-    public void shouldSkipOverAbortedMessagesOnRestore() throws Exception {
-        shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(true);
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldSkipOverAbortedMessagesOnRestore(final boolean streamsProtocolEnabled) throws Exception {
+        shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(true, streamsProtocolEnabled);
     }
 
-    private void shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(final boolean appendAbortedMessages) throws Exception {
+    private void shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(final boolean appendAbortedMessages,
+                                                                    final boolean streamsProtocolEnabled) throws Exception {
         // records with key 1L, 2L, and 4L are written into partition-0
         // record with key 3L is written into partition-1
         produceInitialGlobalTableValues();
@@ -375,13 +384,13 @@ public class GlobalKTableEOSIntegrationTest {
                 public void onRestoreEnd(final TopicPartition topicPartition,
                                          final String storeName,
                                          final long totalRestored) { }
-            });
+            }, streamsProtocolEnabled);
             final Exception fatal = error.get();
             if (fatal != null) {
                 throw fatal;
             }
         } else {
-            startStreams();
+            startStreams(streamsProtocolEnabled);
         }
 
         final Map<Long, String> expected = new HashMap<>();
@@ -410,13 +419,14 @@ public class GlobalKTableEOSIntegrationTest {
         );
     }
 
-    @Test
-    public void shouldNotRestoreAbortedMessages() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldNotRestoreAbortedMessages(final boolean streamsProtocolEnabled) throws Exception {
         produceAbortedMessages();
         produceInitialGlobalTableValues();
         produceAbortedMessages();
 
-        startStreams();
+        startStreams(streamsProtocolEnabled);
         
         final Map<Long, String> expected = new HashMap<>();
         expected.put(1L, "A");
@@ -451,12 +461,16 @@ public class GlobalKTableEOSIntegrationTest {
         CLUSTER.createTopic(globalTableTopic, 2, 1);
     }
     
-    private void startStreams() {
-        startStreams(null);
+    private void startStreams(final boolean streamsProtocolEnabled) {
+        startStreams(null, streamsProtocolEnabled);
     }
 
-    private void startStreams(final StateRestoreListener stateRestoreListener) {
+    private void startStreams(final StateRestoreListener stateRestoreListener,
+                              final boolean streamsProtocolEnabled) {
         streamsConfiguration.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE_V2);
+        if (streamsProtocolEnabled) {
+            streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         kafkaStreams = new KafkaStreams(builder.build(), streamsConfiguration);
         kafkaStreams.setGlobalStateRestoreListener(stateRestoreListener);
         kafkaStreams.start();
