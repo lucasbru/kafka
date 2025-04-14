@@ -300,6 +300,8 @@ public class StreamsRebalanceData {
 
     private final AtomicBoolean shutdownRequested = new AtomicBoolean(false);
 
+    private final AtomicReference<String> missingSourceTopic = new AtomicReference<>(null);
+
     public StreamsRebalanceData(final UUID processId,
                                 final Optional<HostInfo> endpoint,
                                 final Map<String, Subtopology> subtopologies,
@@ -344,6 +346,14 @@ public class StreamsRebalanceData {
 
     public Map<HostInfo, List<TopicPartition>> partitionsByHost() {
         return partitionsByHost.get();
+    }
+
+    public void setMissingSourceTopic(final String error) {
+        missingSourceTopic.set(error);
+    }
+
+    public String missingSourceTopic() {
+        return missingSourceTopic.get();
     }
 
     public void requestShutdown() {

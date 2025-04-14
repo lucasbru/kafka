@@ -63,6 +63,7 @@ import java.util.Properties;
 import java.util.regex.Pattern;
 
 import static org.apache.kafka.common.utils.Utils.mkProperties;
+import static org.apache.kafka.streams.utils.TestUtils.safeUniqueTestName;
 import static org.apache.kafka.test.TestUtils.waitForCondition;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
@@ -169,7 +170,7 @@ public class FineGrainedAutoResetIntegrationTest {
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
         streamsConfiguration = StreamsTestUtils.getStreamsConfig(
-                "testAutoOffsetId",
+                "testAutoOffsetId" + safeUniqueTestName(testInfo),
                 CLUSTER.bootstrapServers(),
                 STRING_SERDE_CLASSNAME,
                 STRING_SERDE_CLASSNAME,

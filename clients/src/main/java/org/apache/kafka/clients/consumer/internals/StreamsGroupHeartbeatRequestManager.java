@@ -524,6 +524,16 @@ public class StreamsGroupHeartbeatRequestManager implements RequestManager {
                 .map(status -> "(" + status.statusCode() + ") " + status.statusDetail())
                 .collect(Collectors.joining(", "));
             logger.warn("Membership is in the following statuses: {}", statusDetails);
+            boolean isMissingSourceTopic = false;
+            for (StreamsGroupHeartbeatResponseData.Status status : statuses) {
+                if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.MISSING_SOURCE_TOPICS.code()) {
+                    streamsRebalanceData.setMissingSourceTopic(status.statusDetail());
+                    isMissingSourceTopic = true;
+                }
+            }
+            if (!isMissingSourceTopic) {
+                streamsRebalanceData.setMissingSourceTopic(null);
+            }
         }
 
         membershipManager.onHeartbeatSuccess(response);

@@ -1039,6 +1039,13 @@ public class KafkaStreams implements AutoCloseable {
             globalStreamThread.setStateListener(streamStateListener);
         }
 
+        if (applicationConfigs.getString(StreamsConfig.GROUP_PROTOCOL_CONFIG).equalsIgnoreCase(GroupProtocol.STREAMS.name)) {
+            if (topologyMetadata.usesPatternSubscription()) {
+                throw new IllegalArgumentException("Pattern subscription is not yet supported with the Streams rebalance " +
+                    "protocol");
+            }
+        }
+
         queryableStoreProvider = new QueryableStoreProvider(globalStateStoreProvider);
         for (int i = 1; i <= numStreamThreads; i++) {
             createAndAddStreamThread(cacheSizePerThread, i);

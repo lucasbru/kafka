@@ -17,6 +17,7 @@
 package org.apache.kafka.streams.integration;
 
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KafkaStreams.State;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -33,10 +34,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -52,8 +55,9 @@ public class HandlingSourceTopicDeletionIntegrationTest {
     private static final long TIMEOUT = 60000;
     private static final String INPUT_TOPIC = "inputTopic";
     private static final String OUTPUT_TOPIC = "outputTopic";
+    private String safeTestName = "";
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -66,7 +70,8 @@ public class HandlingSourceTopicDeletionIntegrationTest {
     }
 
     @BeforeEach
-    public void before() throws InterruptedException {
+    public void before(TestInfo testInfo) throws InterruptedException {
+        safeTestName = safeUniqueTestName(testInfo);
         CLUSTER.createTopics(INPUT_TOPIC, OUTPUT_TOPIC);
     }
 
@@ -75,13 +80,13 @@ public class HandlingSourceTopicDeletionIntegrationTest {
         CLUSTER.deleteTopics(INPUT_TOPIC, OUTPUT_TOPIC);
     }
 
-    @Test
-    public void shouldThrowErrorAfterSourceTopicDeleted(final TestInfo testName) throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldThrowErrorAfterSourceTopicDeleted(final boolean streamsProtocolEnabled) throws InterruptedException {
         final StreamsBuilder builder = new StreamsBuilder();
         builder.stream(INPUT_TOPIC, Consumed.with(Serdes.Integer(), Serdes.String()))
             .to(OUTPUT_TOPIC, Produced.with(Serdes.Integer(), Serdes.String()));
 
-        final String safeTestName = safeUniqueTestName(testName);
         final String appId = "app-" + safeTestName;
 
         final Properties streamsConfiguration = new Properties();
@@ -91,6 +96,9 @@ public class HandlingSourceTopicDeletionIntegrationTest {
         streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         streamsConfiguration.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, NUM_THREADS);
         streamsConfiguration.put(StreamsConfig.METADATA_MAX_AGE_CONFIG, 2000);
+        if (streamsProtocolEnabled) {
+            streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         final Topology topology = builder.build();
         final KafkaStreams kafkaStreams1 = new KafkaStreams(topology, streamsConfiguration);

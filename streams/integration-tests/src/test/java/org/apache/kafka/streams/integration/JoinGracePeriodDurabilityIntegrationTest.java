@@ -24,6 +24,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValueTimestamp;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -42,15 +43,17 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -71,7 +74,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 @Timeout(600)
 public class JoinGracePeriodDurabilityIntegrationTest {
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(3);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(3);
     private static final long NOW = Instant.now().toEpochMilli();
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -88,8 +91,9 @@ public class JoinGracePeriodDurabilityIntegrationTest {
     private static final Serde<String> STRING_SERDE = Serdes.String();
     private static final long COMMIT_INTERVAL = 100L;
 
-    @Test
-    public void shouldRecoverBufferAfterShutdown(final TestInfo testInfo) {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldRecoverBufferAfterShutdown(final boolean streamsProtocolEnabled, final TestInfo testInfo) {
         final String testId = safeUniqueTestName(testInfo);
         final String appId = "appId_" + testId;
         final String streamInput = "Streaminput" + testId;
@@ -125,6 +129,9 @@ public class JoinGracePeriodDurabilityIntegrationTest {
         ));
 
         streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, COMMIT_INTERVAL);
+        if (streamsProtocolEnabled) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         KafkaStreams driver = getStartedStreams(streamsConfig, builder, true);
         try {

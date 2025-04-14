@@ -22,6 +22,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
@@ -39,11 +40,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -62,7 +65,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @Timeout(600)
 public class JoinStoreIntegrationTest {
 
-    private static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    private static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -101,9 +104,13 @@ public class JoinStoreIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(STREAMS_CONFIG);
     }
 
-    @Test
-    public void providingAJoinStoreNameShouldNotMakeTheJoinResultQueryable() throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void providingAJoinStoreNameShouldNotMakeTheJoinResultQueryable(final boolean streamsProtocolEnabled) throws InterruptedException {
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, APP_ID + "-no-store-access");
+        if (streamsProtocolEnabled) {
+            STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         final StreamsBuilder builder = new StreamsBuilder();
 
         final KStream<String, Integer> left = builder.stream(INPUT_TOPIC_LEFT, Consumed.with(Serdes.String(), Serdes.Integer()));
@@ -137,9 +144,13 @@ public class JoinStoreIntegrationTest {
         }
     }
 
-    @Test
-    public void streamJoinChangelogTopicShouldBeConfiguredWithDeleteOnlyCleanupPolicy() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void streamJoinChangelogTopicShouldBeConfiguredWithDeleteOnlyCleanupPolicy(final boolean streamsProtocolEnabled) throws Exception {
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, APP_ID + "-changelog-cleanup-policy");
+        if (streamsProtocolEnabled) {
+            STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         final StreamsBuilder builder = new StreamsBuilder();
 
         final KStream<String, Integer> left = builder.stream(INPUT_TOPIC_LEFT, Consumed.with(Serdes.String(), Serdes.Integer()));

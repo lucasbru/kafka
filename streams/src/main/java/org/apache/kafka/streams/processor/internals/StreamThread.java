@@ -50,6 +50,7 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.StreamsConfig.InternalConfig;
 import org.apache.kafka.streams.TaskMetadata;
 import org.apache.kafka.streams.ThreadMetadata;
+import org.apache.kafka.streams.errors.MissingSourceTopicException;
 import org.apache.kafka.streams.errors.StreamsException;
 import org.apache.kafka.streams.errors.TaskCorruptedException;
 import org.apache.kafka.streams.errors.TaskMigratedException;
@@ -1482,6 +1483,11 @@ public class StreamThread extends Thread implements ProcessingThread {
 
             if (streamsRebalanceData.get().shutdownRequested()) {
                 assignmentErrorCode.set(AssignorError.SHUTDOWN_REQUESTED.code());
+            }
+
+            String error = streamsRebalanceData.get().missingSourceTopic();
+            if (error != null) {
+                throw new MissingSourceTopicException("One or more source topics were missing during rebalance:" + error);
             }
         }
     }
