@@ -25,6 +25,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KafkaStreams.State;
 import org.apache.kafka.streams.KeyValue;
@@ -46,13 +47,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -62,7 +65,7 @@ import static org.apache.kafka.streams.utils.TestUtils.safeUniqueTestName;
 @Tag("integration")
 public class SwallowUnknownTopicErrorIntegrationTest {
     private static final int NUM_BROKERS = 1;
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS,
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS,
             Utils.mkProperties(Collections.singletonMap("auto.create.topics.enable", "false")));
 
     @BeforeAll
@@ -174,9 +177,13 @@ public class SwallowUnknownTopicErrorIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfiguration);
     }
 
-    @Test
-    public void shouldThrowStreamsExceptionWithMissingTopicAndDefaultExceptionHandler() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldThrowStreamsExceptionWithMissingTopicAndDefaultExceptionHandler(final boolean streamsProtocolEnabled) throws Exception {
         final Properties streamsConfiguration = getCommonProperties();
+        if (streamsProtocolEnabled) {
+            streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         kafkaStreams = new KafkaStreams(topology, streamsConfiguration);
         kafkaStreams.start();
         TestUtils.waitForCondition(

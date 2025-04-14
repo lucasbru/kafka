@@ -23,6 +23,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -40,15 +41,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 
@@ -65,11 +68,11 @@ import static org.hamcrest.core.IsEqual.equalTo;
 public class KStreamKStreamIntegrationTest {
     private static final int NUM_BROKERS = 1;
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
     private static final MockTime MOCK_TIME = CLUSTER.time;
-    private static final String LEFT_STREAM = "leftStream";
-    private static final String RIGHT_STREAM = "rightStream";
-    private static final String OUTPUT = "output";
+    private static String LEFT_STREAM = "";
+    private static String RIGHT_STREAM = "";
+    private static String OUTPUT = "";
     private Properties streamsConfig;
     private KafkaStreams streams;
     private static final Properties CONSUMER_CONFIG = new Properties();
@@ -78,11 +81,6 @@ public class KStreamKStreamIntegrationTest {
     @BeforeAll
     public static void startCluster() throws Exception {
         CLUSTER.start();
-
-        //Use multiple partitions to ensure distribution of keys.
-        CLUSTER.createTopic(LEFT_STREAM, 4, 1);
-        CLUSTER.createTopic(RIGHT_STREAM, 4, 1);
-        CLUSTER.createTopic(OUTPUT, 4, 1);
 
         CONSUMER_CONFIG.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
         CONSUMER_CONFIG.put(ConsumerConfig.GROUP_ID_CONFIG, "result-consumer");
@@ -96,12 +94,25 @@ public class KStreamKStreamIntegrationTest {
     }
 
     @BeforeEach
-    public void before(final TestInfo testInfo) throws IOException {
+    public void before(final TestInfo testInfo) throws Exception {
         final String stateDirBasePath = TestUtils.tempDirectory().getPath();
         final String safeTestName = safeUniqueTestName(testInfo);
         streamsConfig = getStreamsConfig(safeTestName);
         streamsConfig.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath);
         streamsConfig.put(InternalConfig.EMIT_INTERVAL_MS_KSTREAMS_OUTER_JOIN_SPURIOUS_RESULTS_FIX, 0L);
+        if (testInfo.getDisplayName().contains("streamsProtocolEnabled=true")) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
+
+        LEFT_STREAM = "leftStream-" + safeTestName;
+        RIGHT_STREAM = "rightStream-" + safeTestName;
+        OUTPUT = "output-" + safeTestName;
+
+        //Use multiple partitions to ensure distribution of keys.
+        CLUSTER.createTopic(LEFT_STREAM, 4, 1);
+        CLUSTER.createTopic(RIGHT_STREAM, 4, 1);
+        CLUSTER.createTopic(OUTPUT, 4, 1);
+
     }
 
     @AfterEach
@@ -113,7 +124,8 @@ public class KStreamKStreamIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(streamsConfig);
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
     public void shouldOuterJoin() throws Exception {
         final Set<KeyValue<String, String>> expected = new HashSet<>();
         expected.add(new KeyValue<>("Key-1", "value1=left-1a,value2=null"));

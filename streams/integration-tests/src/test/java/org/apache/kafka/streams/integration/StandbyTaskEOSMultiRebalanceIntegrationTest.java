@@ -23,6 +23,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StoreQueryParameters;
@@ -44,7 +45,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +54,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -80,7 +83,7 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
     private KafkaStreams streamInstanceTwo;
     private KafkaStreams streamInstanceThree;
 
-    private static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(3);
+    private static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(3);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -126,8 +129,9 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
     // The output topic must thus contain 63000 message:
     //      The Key is unique and from the range of input values
     //      The Values produced are unique.
-    @Test
-    public void shouldHonorEOSWhenUsingCachingAndStandbyReplicas() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void shouldHonorEOSWhenUsingCachingAndStandbyReplicas(final boolean streamsProtocolEnabled) throws Exception {
         final Properties readCommitted = new Properties();
         readCommitted.setProperty("isolation.level", "read_committed");
         final long time = System.currentTimeMillis();
@@ -148,9 +152,9 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
                 10L + time
         );
 
-        streamInstanceOne = buildWithUniqueIdAssignmentTopology(base + "-1");
-        streamInstanceTwo = buildWithUniqueIdAssignmentTopology(base + "-2");
-        streamInstanceThree = buildWithUniqueIdAssignmentTopology(base + "-3");
+        streamInstanceOne = buildWithUniqueIdAssignmentTopology(base + "-1", streamsProtocolEnabled);
+        streamInstanceTwo = buildWithUniqueIdAssignmentTopology(base + "-2", streamsProtocolEnabled);
+        streamInstanceThree = buildWithUniqueIdAssignmentTopology(base + "-3", streamsProtocolEnabled);
 
         LOG.info("start first instance and wait for completed processing");
         startApplicationAndWaitUntilRunning(Collections.singletonList(streamInstanceOne), Duration.ofSeconds(30));
@@ -225,7 +229,7 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
         }
     }
 
-    private KafkaStreams buildWithUniqueIdAssignmentTopology(final String stateDirPath) {
+    private KafkaStreams buildWithUniqueIdAssignmentTopology(final String stateDirPath, final boolean streamsProtocolEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
 
         builder.addStateStore(Stores.keyValueStoreBuilder(
@@ -278,11 +282,11 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
                         storeName, counterName
                 )
                 .to(outputTopic);
-        return new KafkaStreams(builder.build(), props(stateDirPath));
+        return new KafkaStreams(builder.build(), props(stateDirPath, streamsProtocolEnabled));
     }
 
 
-    private Properties props(final String stateDirPath) {
+    private Properties props(final String stateDirPath, final boolean streamsProtocolEnabled) {
         final Properties streamsConfiguration = new Properties();
         streamsConfiguration.put(StreamsConfig.APPLICATION_ID_CONFIG, appId);
         streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
@@ -296,6 +300,10 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
         streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.Integer().getClass());
         streamsConfiguration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 100L);
         streamsConfiguration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+
+        if (streamsProtocolEnabled) {
+            streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         return streamsConfiguration;
     }

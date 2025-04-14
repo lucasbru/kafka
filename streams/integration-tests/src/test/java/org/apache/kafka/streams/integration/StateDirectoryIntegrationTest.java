@@ -22,6 +22,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
@@ -35,14 +36,16 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -57,7 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(600)
 public class StateDirectoryIntegrationTest {
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(3);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(3);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -69,8 +72,9 @@ public class StateDirectoryIntegrationTest {
         CLUSTER.stop();
     }
 
-    @Test
-    public void testCleanUpStateDirIfEmpty(final TestInfo testInfo) throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testCleanUpStateDirIfEmpty(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws InterruptedException {
         final String uniqueTestName = safeUniqueTestName(testInfo);
 
         // Create Topic
@@ -114,6 +118,9 @@ public class StateDirectoryIntegrationTest {
                 mkEntry(StreamsConfig.STATE_DIR_CONFIG, stateDir),
                 mkEntry(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers())
             ));
+            if (streamsProtocolEnabled) {
+                streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            }
 
             final KafkaStreams streams = new KafkaStreams(topology, streamsConfig);
 
@@ -175,8 +182,9 @@ public class StateDirectoryIntegrationTest {
         }
     }
 
-    @Test
-    public void testNotCleanUpStateDirIfNotEmpty(final TestInfo testInfo) throws InterruptedException {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testNotCleanUpStateDirIfNotEmpty(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws InterruptedException {
         final String uniqueTestName = safeUniqueTestName(testInfo);
 
         // Create Topic
@@ -220,6 +228,9 @@ public class StateDirectoryIntegrationTest {
                 mkEntry(StreamsConfig.STATE_DIR_CONFIG, stateDir),
                 mkEntry(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers())
             ));
+            if (streamsProtocolEnabled) {
+                streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            }
 
             final KafkaStreams streams = new KafkaStreams(topology, streamsConfig);
 

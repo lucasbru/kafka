@@ -28,6 +28,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KafkaStreams.CloseOptions;
 import org.apache.kafka.streams.KeyValue;
@@ -45,9 +46,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.File;
 import java.io.IOException;
@@ -55,6 +57,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 
 import static org.apache.kafka.streams.integration.utils.IntegrationTestUtils.waitForEmptyConsumerGroup;
@@ -81,7 +84,7 @@ public class KafkaStreamsCloseOptionsIntegrationTest {
     static {
         final Properties brokerProps = new Properties();
         brokerProps.setProperty(GroupCoordinatorConfig.GROUP_MAX_SESSION_TIMEOUT_MS_CONFIG, Integer.toString(Integer.MAX_VALUE));
-        CLUSTER = new EmbeddedKafkaCluster(1, brokerProps);
+        CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1, brokerProps);
     }
 
     @BeforeAll
@@ -151,10 +154,15 @@ public class KafkaStreamsCloseOptionsIntegrationTest {
         Utils.delete(testFolder);
     }
 
-    @Test
-    public void testCloseOptions() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testCloseOptions(final boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         // Test with two threads to show that each of the threads is being called to remove clients from the CG.
         streamsConfig.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 2);
+
         streams = new KafkaStreams(setupTopologyWithoutIntermediateUserTopic(), streamsConfig);
         IntegrationTestUtils.startApplicationAndWaitUntilRunning(streams);
         IntegrationTestUtils.waitUntilMinKeyValueRecordsReceived(resultConsumerConfig, OUTPUT_TOPIC, 10);
