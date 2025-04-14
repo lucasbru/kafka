@@ -75,4 +75,14 @@ public interface KafkaClientSupplier {
      * @return an instance of Kafka consumer
      */
     Consumer<byte[], byte[]> getGlobalConsumer(final Map<String, Object> config);
+
+    /**
+     * Wrap a {@link Consumer} which is used to read records of source topics, and take part in the
+     * streams rebalance group protocol.
+     *
+     * @return an instance of Kafka consumer
+     */
+    default Consumer<byte[], byte[]> getStreamsConsumerWrapper(Consumer<byte[], byte[]> wrappedConsumer) {
+        return wrappedConsumer;
+    }
 }

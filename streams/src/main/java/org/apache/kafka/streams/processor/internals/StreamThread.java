@@ -548,11 +548,13 @@ public class StreamThread extends Thread implements ProcessingThread {
             final ByteArrayDeserializer keyDeserializer = new ByteArrayDeserializer();
             final ByteArrayDeserializer valueDeserializer = new ByteArrayDeserializer();
             return new MainConsumerSetup(
-                new AsyncKafkaConsumer<>(
-                    new ConsumerConfig(ConsumerConfig.appendDeserializerToConfig(consumerConfigs, keyDeserializer, valueDeserializer)),
-                    keyDeserializer,
-                    valueDeserializer,
-                    streamsRebalanceData
+                clientSupplier.getStreamsConsumerWrapper(
+                    new AsyncKafkaConsumer<>(
+                        new ConsumerConfig(ConsumerConfig.appendDeserializerToConfig(consumerConfigs, keyDeserializer, valueDeserializer)),
+                        keyDeserializer,
+                        valueDeserializer,
+                        streamsRebalanceData
+                    )
                 ),
                 streamsRebalanceData
             );

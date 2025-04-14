@@ -53,4 +53,9 @@ public class DefaultKafkaClientSupplier implements KafkaClientSupplier {
     public Consumer<byte[], byte[]> getGlobalConsumer(final Map<String, Object> config) {
         return new KafkaConsumer<>(config, new ByteArrayDeserializer(), new ByteArrayDeserializer());
     }
+
+    @Override
+    public Consumer<byte[], byte[]> getStreamsConsumerWrapper(Consumer<byte[], byte[]> wrappedConsumer) {
+        return wrappedConsumer;
+    }
 }
