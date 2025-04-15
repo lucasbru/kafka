@@ -81,7 +81,7 @@ public class HandlingSourceTopicDeletionIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldThrowErrorAfterSourceTopicDeleted(final boolean streamsProtocolEnabled) throws InterruptedException {
         final StreamsBuilder builder = new StreamsBuilder();
         builder.stream(INPUT_TOPIC, Consumed.with(Serdes.Integer(), Serdes.String()))

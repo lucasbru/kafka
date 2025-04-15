@@ -96,7 +96,7 @@ public class IQv2IntegrationTest {
     private static final Position INPUT_POSITION = Position.emptyPosition();
     private static final String STORE_NAME = "kv-store";
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
 
     private KafkaStreams kafkaStreams;
 

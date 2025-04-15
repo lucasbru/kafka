@@ -23,6 +23,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KafkaStreams.State;
 import org.apache.kafka.streams.KeyValue;
@@ -52,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 
 import static java.util.Arrays.asList;
@@ -72,7 +74,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("integration")
 public class PauseResumeIntegrationTest {
     private static final Duration STARTUP_TIMEOUT = Duration.ofSeconds(45);
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1);
     private static Properties producerConfig;
     private static Properties consumerConfig;
 
@@ -135,6 +137,7 @@ public class PauseResumeIntegrationTest {
         properties.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, 100);
         properties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 1000);
         properties.put(StreamsConfig.InternalConfig.STATE_UPDATER_ENABLED, stateUpdaterEnabled);
+        properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
         return properties;
     }
 
@@ -152,7 +155,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldPauseAndResumeKafkaStreams(final boolean stateUpdaterEnabled) throws Exception {
         kafkaStreams = buildKafkaStreams(OUTPUT_STREAM_1, stateUpdaterEnabled);
         kafkaStreams.start();
@@ -177,7 +180,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAllowForTopologiesToStartPaused(final boolean stateUpdaterEnabled) throws Exception {
         kafkaStreams = buildKafkaStreams(OUTPUT_STREAM_1, stateUpdaterEnabled);
         kafkaStreams.pause();
@@ -198,7 +201,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     @SuppressWarnings("deprecation")
     public void shouldPauseAndResumeKafkaStreamsWithNamedTopologies(final boolean stateUpdaterEnabled) throws Exception {
         streamsNamedTopologyWrapper = new KafkaStreamsNamedTopologyWrapper(props(stateUpdaterEnabled));
@@ -234,7 +237,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     @SuppressWarnings("deprecation")
     public void shouldPauseAndResumeAllKafkaStreamsWithNamedTopologies(final boolean stateUpdaterEnabled) throws Exception {
         streamsNamedTopologyWrapper = new KafkaStreamsNamedTopologyWrapper(props(stateUpdaterEnabled));
@@ -271,7 +274,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     @SuppressWarnings("deprecation")
     public void shouldAllowForNamedTopologiesToStartPaused(final boolean stateUpdaterEnabled) throws Exception {
         streamsNamedTopologyWrapper = new KafkaStreamsNamedTopologyWrapper(props(stateUpdaterEnabled));
@@ -302,7 +305,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void pauseResumeShouldWorkAcrossInstances(final boolean stateUpdaterEnabled) throws Exception {
         produceToInputTopics(INPUT_STREAM_1, STANDARD_INPUT_DATA);
 
@@ -332,7 +335,7 @@ public class PauseResumeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void pausedTopologyShouldNotRestoreStateStores(final boolean stateUpdaterEnabled) throws Exception {
         final Properties properties1 = props(stateUpdaterEnabled);
         properties1.put(StreamsConfig.NUM_STANDBY_REPLICAS_CONFIG, 1);

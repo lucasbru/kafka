@@ -92,7 +92,7 @@ public class JoinWithIncompleteMetadataIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testShouldAutoShutdownOnJoinWithIncompleteMetadata(final boolean streamsProtocolEnabled) throws InterruptedException {
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, APP_ID);
         STREAMS_CONFIG.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());

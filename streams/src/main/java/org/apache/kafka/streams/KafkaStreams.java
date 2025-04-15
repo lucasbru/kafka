@@ -1044,6 +1044,8 @@ public class KafkaStreams implements AutoCloseable {
                 throw new IllegalArgumentException("Pattern subscription is not yet supported with the Streams rebalance " +
                     "protocol");
             }
+        } else {
+            throw new IllegalStateException("Temporarily disabled");
         }
 
         queryableStoreProvider = new QueryableStoreProvider(globalStateStoreProvider);

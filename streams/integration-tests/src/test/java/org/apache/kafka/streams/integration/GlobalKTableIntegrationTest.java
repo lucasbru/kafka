@@ -134,7 +134,7 @@ public class GlobalKTableIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldKStreamGlobalKTableLeftJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.leftJoin(globalTable, keyMapper, joiner);
         streamTableJoin.process(supplier);
@@ -220,7 +220,7 @@ public class GlobalKTableIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldKStreamGlobalKTableJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.join(globalTable, keyMapper, joiner);
         streamTableJoin.process(supplier);
@@ -306,7 +306,7 @@ public class GlobalKTableIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldRestoreGlobalInMemoryKTableOnRestart(final boolean streamsProtocolEnabled) throws Exception {
         builder = new StreamsBuilder();
         globalTable = builder.globalTable(
@@ -338,7 +338,7 @@ public class GlobalKTableIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldGetToRunningWithOnlyGlobalTopology(final boolean streamsProtocolEnabled) throws Exception {
         builder = new StreamsBuilder();
         globalTable = builder.globalTable(

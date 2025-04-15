@@ -25,6 +25,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValueTimestamp;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -46,6 +47,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -72,7 +74,7 @@ public class ResetPartitionTimeIntegrationTest {
         BROKER_CONFIG.put("transaction.state.log.min.isr", 1);
     }
     public static final EmbeddedKafkaCluster CLUSTER =
-        new EmbeddedKafkaCluster(NUM_BROKERS, BROKER_CONFIG);
+        EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS, BROKER_CONFIG);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -110,6 +112,7 @@ public class ResetPartitionTimeIntegrationTest {
         streamsConfig.put(StreamsConfig.POLL_MS_CONFIG, Integer.toString(DEFAULT_TIMEOUT));
         streamsConfig.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, (long) DEFAULT_TIMEOUT);
         streamsConfig.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory().getPath());
+        streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
 
         KafkaStreams kafkaStreams = getStartedStreams(streamsConfig, builder, true);
         try {

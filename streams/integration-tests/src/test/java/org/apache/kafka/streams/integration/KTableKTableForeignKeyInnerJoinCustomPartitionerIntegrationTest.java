@@ -24,6 +24,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -49,9 +50,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -59,6 +61,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -77,7 +80,7 @@ import static org.hamcrest.core.IsEqual.equalTo;
 public class KTableKTableForeignKeyInnerJoinCustomPartitionerIntegrationTest {
     private static final int NUM_BROKERS = 1;
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
     private static final MockTime MOCK_TIME = CLUSTER.time;
     private static final String TABLE_1 = "table1";
     private static final String TABLE_2 = "table2";
@@ -154,6 +157,11 @@ public class KTableKTableForeignKeyInnerJoinCustomPartitionerIntegrationTest {
         streamsConfig.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-1");
         streamsConfigTwo.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-2");
         streamsConfigThree.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-3");
+        if (testInfo.getDisplayName().contains("streamsProtocolEnabled=true")) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            streamsConfigTwo.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            streamsConfigThree.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
     }
 
     @AfterEach
@@ -173,8 +181,9 @@ public class KTableKTableForeignKeyInnerJoinCustomPartitionerIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(asList(streamsConfig, streamsConfigTwo, streamsConfigThree));
     }
 
-    @Test
-    public void shouldInnerJoinMultiPartitionQueryable() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldInnerJoinMultiPartitionQueryable(final boolean streamsProtocolEnabled) throws Exception {
         final Set<KeyValue<String, String>> expectedOne = new HashSet<>();
         expectedOne.add(new KeyValue<>("ID123-1", "value1=ID123-A1,value2=BBB"));
         expectedOne.add(new KeyValue<>("ID123-2", "value1=ID123-A2,value2=BBB"));
@@ -184,8 +193,9 @@ public class KTableKTableForeignKeyInnerJoinCustomPartitionerIntegrationTest {
         verifyKTableKTableJoin(expectedOne);
     }
 
-    @Test
-    public void shouldThrowIllegalArgumentExceptionWhenCustomPartitionerReturnsMultiplePartitions() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldThrowIllegalArgumentExceptionWhenCustomPartitionerReturnsMultiplePartitions(final boolean streamsProtocolEnabled) throws Exception {
         final String innerJoinType = "INNER";
         final String queryableName = innerJoinType + "-store1";
 

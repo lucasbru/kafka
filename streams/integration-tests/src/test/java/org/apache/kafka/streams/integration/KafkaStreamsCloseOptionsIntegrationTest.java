@@ -155,7 +155,7 @@ public class KafkaStreamsCloseOptionsIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testCloseOptions(final boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));

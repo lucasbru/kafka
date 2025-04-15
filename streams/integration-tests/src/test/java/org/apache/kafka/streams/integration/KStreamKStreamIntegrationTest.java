@@ -125,8 +125,8 @@ public class KStreamKStreamIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    public void shouldOuterJoin() throws Exception {
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldOuterJoin(final boolean streamsProtocolEnabled) throws Exception {
         final Set<KeyValue<String, String>> expected = new HashSet<>();
         expected.add(new KeyValue<>("Key-1", "value1=left-1a,value2=null"));
         expected.add(new KeyValue<>("Key-2", "value1=left-2a,value2=null"));

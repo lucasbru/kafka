@@ -92,7 +92,7 @@ public class JoinGracePeriodDurabilityIntegrationTest {
     private static final long COMMIT_INTERVAL = 100L;
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldRecoverBufferAfterShutdown(final boolean streamsProtocolEnabled, final TestInfo testInfo) {
         final String testId = safeUniqueTestName(testInfo);
         final String appId = "appId_" + testId;

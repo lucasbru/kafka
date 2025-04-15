@@ -27,6 +27,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -63,6 +64,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -85,7 +87,7 @@ import static org.hamcrest.Matchers.greaterThan;
 @Tag("integration")
 public class RegexSourceIntegrationTest {
     private static final int NUM_BROKERS = 1;
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
 
     @BeforeAll
     public static void startCluster() throws IOException, InterruptedException {
@@ -138,6 +140,7 @@ public class RegexSourceIntegrationTest {
         properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         properties.put(StreamsConfig.MAX_TASK_IDLE_MS_CONFIG, 0L);
         properties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 10000);
+        properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
 
         streamsConfiguration = StreamsTestUtils.getStreamsConfig(
             safeUniqueTestName(testInfo),

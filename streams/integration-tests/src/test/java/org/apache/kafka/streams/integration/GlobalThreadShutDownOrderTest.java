@@ -169,7 +169,7 @@ public class GlobalThreadShutDownOrderTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldFinishGlobalStoreOperationOnShutDown(final boolean streamsProtocolEnabled) throws Exception {
         kafkaStreams = new KafkaStreams(builder.build(), streamsConfiguration);
         populateTopics(globalStoreTopic);

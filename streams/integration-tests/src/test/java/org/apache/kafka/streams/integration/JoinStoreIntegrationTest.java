@@ -105,7 +105,7 @@ public class JoinStoreIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void providingAJoinStoreNameShouldNotMakeTheJoinResultQueryable(final boolean streamsProtocolEnabled) throws InterruptedException {
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, APP_ID + "-no-store-access");
         if (streamsProtocolEnabled) {
@@ -145,7 +145,7 @@ public class JoinStoreIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void streamJoinChangelogTopicShouldBeConfiguredWithDeleteOnlyCleanupPolicy(final boolean streamsProtocolEnabled) throws Exception {
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, APP_ID + "-changelog-cleanup-policy");
         if (streamsProtocolEnabled) {

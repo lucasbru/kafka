@@ -20,6 +20,7 @@ package org.apache.kafka.streams.integration;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.Timeout;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -61,7 +63,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 @Timeout(600)
 public class TaskMetadataIntegrationTest {
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1, new Properties(), Collections.emptyMap(), 0L, 0L);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1, new Properties(), Collections.emptyMap(), 0L, 0L);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -106,7 +108,8 @@ public class TaskMetadataIntegrationTest {
                         mkEntry(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 2),
                         mkEntry(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class),
                         mkEntry(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.StringSerde.class),
-                        mkEntry(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 1L)
+                        mkEntry(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 1L),
+                        mkEntry(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()))
                 )
         );
     }

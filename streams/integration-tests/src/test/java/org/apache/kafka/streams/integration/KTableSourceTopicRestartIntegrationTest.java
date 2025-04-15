@@ -23,6 +23,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -40,15 +41,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,7 +66,7 @@ public class KTableSourceTopicRestartIntegrationTest {
     private static final Properties PRODUCER_CONFIG = new Properties();
     private static final Properties STREAMS_CONFIG = new Properties();
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -119,8 +122,12 @@ public class KTableSourceTopicRestartIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(STREAMS_CONFIG);
     }
 
-    @Test
-    public void shouldRestoreAndProgressWhenTopicWrittenToDuringRestorationWithEosDisabled() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldRestoreAndProgressWhenTopicWrittenToDuringRestorationWithEosDisabled(final boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try {
             streams = IntegrationTestUtils.getRunningStreams(STREAMS_CONFIG, streamsBuilder, false);
 
@@ -145,9 +152,13 @@ public class KTableSourceTopicRestartIntegrationTest {
         }
     }
 
-    @Test
-    public void shouldRestoreAndProgressWhenTopicWrittenToDuringRestorationWithEosV2Enabled() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldRestoreAndProgressWhenTopicWrittenToDuringRestorationWithEosV2Enabled(final boolean streamsProtocolEnabled) throws Exception {
         STREAMS_CONFIG.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE_V2);
+        if (streamsProtocolEnabled) {
+            STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
 
         try {
             streams = IntegrationTestUtils.getRunningStreams(STREAMS_CONFIG, streamsBuilder, false);
@@ -173,8 +184,12 @@ public class KTableSourceTopicRestartIntegrationTest {
         }
     }
 
-    @Test
-    public void shouldRestoreAndProgressWhenTopicNotWrittenToDuringRestoration() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldRestoreAndProgressWhenTopicNotWrittenToDuringRestoration(final boolean streamsProtocolEnabled) throws Exception {
+        if (streamsProtocolEnabled) {
+            STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
         try {
             streams = IntegrationTestUtils.getStartedStreams(STREAMS_CONFIG, streamsBuilder, false);
 

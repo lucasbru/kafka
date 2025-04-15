@@ -39,6 +39,7 @@ import org.apache.kafka.server.telemetry.ClientTelemetryPayload;
 import org.apache.kafka.server.telemetry.ClientTelemetryReceiver;
 import org.apache.kafka.shaded.io.opentelemetry.proto.metrics.v1.MetricsData;
 import org.apache.kafka.streams.ClientInstanceIds;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaClientSupplier;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -123,7 +124,7 @@ public class KafkaStreamsTelemetryIntegrationTest {
     public static void startCluster() throws IOException {
         final Properties properties = new Properties();
         properties.put("metric.reporters", TelemetryPlugin.class.getName());
-        cluster = new EmbeddedKafkaCluster(NUM_BROKERS, properties);
+        cluster = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS, properties);
         cluster.start();
     }
 
@@ -456,6 +457,7 @@ public class KafkaStreamsTelemetryIntegrationTest {
         streamsConfiguration.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
         streamsConfiguration.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
         streamsConfiguration.put(StreamsConfig.DEFAULT_CLIENT_SUPPLIER_CONFIG, TestClientSupplier.class);
+        streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
         streamsConfiguration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         streamsConfiguration.putAll(extraProperties);
         return streamsConfiguration;

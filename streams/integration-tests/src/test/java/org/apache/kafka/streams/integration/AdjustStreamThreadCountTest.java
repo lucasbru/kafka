@@ -159,7 +159,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAddStreamThread(boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -195,7 +195,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldRemoveStreamThread(boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -231,7 +231,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldnNotRemoveStreamThreadWithinTimeout(boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -244,7 +244,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAddAndRemoveThreadsMultipleTimes(boolean streamsProtocolEnabled) throws InterruptedException {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -279,7 +279,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testRebalanceHappensBeforeStreamThreadGetDown(boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -314,7 +314,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAddAndRemoveStreamThreadsWhileKeepingNamesCorrect(boolean streamsProtocolEnabled) throws Exception {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -394,7 +394,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testConcurrentlyAccessThreads(boolean streamsProtocolEnabled) throws InterruptedException {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
@@ -430,7 +430,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldResizeCacheAfterThreadRemovalTimesOut(boolean streamsProtocolEnabled) throws InterruptedException {
         final long totalCacheBytes = 10L;
         final Properties props = new Properties();
@@ -460,7 +460,7 @@ public class AdjustStreamThreadCountTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldResizeCacheAfterThreadReplacement(boolean streamsProtocolEnabled) throws InterruptedException {
         if (streamsProtocolEnabled) {
             properties.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));

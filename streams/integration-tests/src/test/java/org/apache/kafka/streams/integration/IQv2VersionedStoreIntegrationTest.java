@@ -85,7 +85,7 @@ public class IQv2VersionedStoreIntegrationTest {
     private static final int LAST_INDEX = RECORD_NUMBER - 1;
     private static final Position INPUT_POSITION = Position.emptyPosition();
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS, Utils.mkProperties(Collections.singletonMap("auto.create.topics.enable", "true")));
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS, Utils.mkProperties(Collections.singletonMap("auto.create.topics.enable", "true")));
 
     private KafkaStreams kafkaStreams;
 

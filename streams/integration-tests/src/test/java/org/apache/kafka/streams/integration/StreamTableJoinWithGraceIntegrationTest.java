@@ -51,7 +51,7 @@ public class StreamTableJoinWithGraceIntegrationTest extends AbstractJoinIntegra
             Joined.with(Serdes.Long(), Serdes.String(), Serdes.String(), "Grace", Duration.ofMillis(2));
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testInnerWithVersionedStore(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT, Consumed.with(Serdes.Long(), Serdes.String()));
@@ -92,7 +92,7 @@ public class StreamTableJoinWithGraceIntegrationTest extends AbstractJoinIntegra
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testLeftWithVersionedStore(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);

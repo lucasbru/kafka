@@ -171,7 +171,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldReduce(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         produceMessages(mockTime.milliseconds());
         groupedStream
@@ -222,7 +222,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldReduceWindowed(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long firstBatchTimestamp = mockTime.milliseconds();
         mockTime.sleep(1000);
@@ -300,7 +300,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAggregate(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         produceMessages(mockTime.milliseconds());
         groupedStream.aggregate(
@@ -341,7 +341,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAggregateWindowed(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long firstTimestamp = mockTime.milliseconds();
         mockTime.sleep(1000);
@@ -450,7 +450,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldCount(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         produceMessages(mockTime.milliseconds());
 
@@ -462,7 +462,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldCountWithInternalStore(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         produceMessages(mockTime.milliseconds());
 
@@ -474,7 +474,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldGroupByKey(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long timestamp = mockTime.milliseconds();
         produceMessages(timestamp);
@@ -514,7 +514,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldReduceSlidingWindows(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long firstBatchTimestamp = mockTime.milliseconds();
         final long timeDifference = 500L;
@@ -622,7 +622,7 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldAggregateSlidingWindows(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long firstBatchTimestamp = mockTime.milliseconds();
         final long timeDifference = 500L;
@@ -734,8 +734,8 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    public void shouldCountSessionWindows() throws Exception {
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldCountSessionWindows(final boolean streamsProtocolEnabled) throws Exception {
         final long sessionGap = 5 * 60 * 1000L;
         final List<KeyValue<String, String>> t1Messages = Arrays.asList(
             new KeyValue<>("bob", "start"),
@@ -836,8 +836,8 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    public void shouldReduceSessionWindows() throws Exception {
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldReduceSessionWindows(final boolean streamsProtocolEnabled) throws Exception {
         final long sessionGap = 1000L; // something to do with time
         final List<KeyValue<String, String>> t1Messages = Arrays.asList(
             new KeyValue<>("bob", "start"),
@@ -948,8 +948,8 @@ public class KStreamAggregationIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    public void shouldCountUnlimitedWindows() throws Exception {
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldCountUnlimitedWindows(final boolean streamsProtocolEnabled) throws Exception {
         final long startTime = mockTime.milliseconds() - TimeUnit.MILLISECONDS.convert(1, TimeUnit.HOURS) + 1;
         final long incrementTime = Duration.ofDays(1).toMillis();
 

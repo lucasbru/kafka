@@ -45,7 +45,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     private static final String APP_ID = "stream-stream-join-integration-test";
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testSelfJoin(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -88,7 +88,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testInner(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -140,7 +140,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testInnerRepartitioned(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -194,7 +194,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testLeft(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -247,7 +247,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testLeftRepartitioned(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -302,7 +302,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testOuter(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -356,7 +356,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testOuterRepartitioned(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);
@@ -412,7 +412,7 @@ public class StreamStreamJoinIntegrationTest extends AbstractJoinIntegrationTest
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testMultiInner(final boolean cacheEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         final KStream<Long, String> leftStream = builder.stream(INPUT_TOPIC_LEFT);

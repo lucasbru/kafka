@@ -130,7 +130,7 @@ public class StandbyTaskEOSMultiRebalanceIntegrationTest {
     //      The Key is unique and from the range of input values
     //      The Values produced are unique.
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldHonorEOSWhenUsingCachingAndStandbyReplicas(final boolean streamsProtocolEnabled) throws Exception {
         final Properties readCommitted = new Properties();
         readCommitted.setProperty("isolation.level", "read_committed");

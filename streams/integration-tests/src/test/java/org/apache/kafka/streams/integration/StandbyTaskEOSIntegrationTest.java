@@ -22,6 +22,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StoreQueryParameters;
@@ -54,6 +55,7 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -87,7 +89,7 @@ public class StandbyTaskEOSIntegrationTest {
     private KafkaStreams streamInstanceTwo;
     private KafkaStreams streamInstanceOneRecovery;
 
-    private static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(3);
+    private static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(3);
 
     @BeforeAll
     public static void startCluster() throws IOException {
@@ -391,6 +393,7 @@ public class StandbyTaskEOSIntegrationTest {
         // need to set to zero to get predictable active/standby task assignments
         streamsConfiguration.put(StreamsConfig.ACCEPTABLE_RECOVERY_LAG_CONFIG, 0);
         streamsConfiguration.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
 
         return streamsConfiguration;
     }

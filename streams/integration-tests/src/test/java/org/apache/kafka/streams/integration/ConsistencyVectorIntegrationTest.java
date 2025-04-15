@@ -74,7 +74,7 @@ public class ConsistencyVectorIntegrationTest {
     private static final int KEY = 1;
     private static final int NUMBER_OF_MESSAGES = 100;
 
-    public final EmbeddedKafkaCluster cluster = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public final EmbeddedKafkaCluster cluster = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
 
     private final List<KafkaStreams> streamsToCleanup = new ArrayList<>();
     private final MockTime mockTime = cluster.time;

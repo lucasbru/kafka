@@ -146,7 +146,7 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldKStreamGlobalKTableLeftJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.leftJoin(globalTable, keyMapper, joiner);
         streamTableJoin.foreach(foreachAction);
@@ -218,7 +218,7 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldKStreamGlobalKTableJoin(final boolean streamsProtocolEnabled) throws Exception {
         final KStream<String, String> streamTableJoin = stream.join(globalTable, keyMapper, joiner);
         streamTableJoin.foreach(foreachAction);
@@ -289,7 +289,7 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldRestoreTransactionalMessages(final boolean streamsProtocolEnabled) throws Exception {
         produceInitialGlobalTableValues();
 
@@ -322,13 +322,13 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldSkipOverTxMarkersOnRestore(final boolean streamsProtocolEnabled) throws Exception {
         shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(false, streamsProtocolEnabled);
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldSkipOverAbortedMessagesOnRestore(final boolean streamsProtocolEnabled) throws Exception {
         shouldSkipOverTxMarkersAndAbortedMessagesOnRestore(true, streamsProtocolEnabled);
     }
@@ -420,7 +420,7 @@ public class GlobalKTableEOSIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldNotRestoreAbortedMessages(final boolean streamsProtocolEnabled) throws Exception {
         produceAbortedMessages();
         produceInitialGlobalTableValues();

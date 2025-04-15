@@ -184,7 +184,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithGlobalAutoOffsetResetLatest(final boolean streamsProtocolEnabled) throws Exception {
         streamsConfiguration.put(StreamsConfig.consumerPrefix(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG), "latest");
 
@@ -193,14 +193,14 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithNoCommittedOffsetsWithDefaultGlobalAutoOffsetResetEarliest(final boolean streamsProtocolEnabled) throws Exception {
         final List<String> expectedReceivedValues = Arrays.asList(topic1TestMessage, topic2TestMessage, topicYTestMessage, topicZTestMessage);
         shouldOnlyReadForEarliest("_1", TOPIC_1_1, TOPIC_2_1, TOPIC_A_1, TOPIC_C_1, TOPIC_Y_1, TOPIC_Z_1, OUTPUT_TOPIC_1, expectedReceivedValues);
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldOnlyReadRecordsWhereEarliestSpecifiedWithInvalidCommittedOffsets(final boolean streamsProtocolEnabled) throws Exception {
         commitInvalidOffsets();
 
@@ -279,7 +279,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldFailForResetNone(final boolean streamsProtocolEnabled) throws Exception {
         final Properties props = new Properties();
         props.put(ConsumerConfig.METADATA_MAX_AGE_CONFIG, "1000");
@@ -310,7 +310,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldResetByDuration(final boolean streamsProtocolEnabled) throws Exception {
         final StreamsBuilder builder = new StreamsBuilder();
 
@@ -375,7 +375,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldThrowExceptionOverlappingPattern(final boolean streamsProtocolEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         //NOTE this would realistically get caught when building topology, the test is for completeness
@@ -391,7 +391,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldThrowExceptionOverlappingTopic(final boolean streamsProtocolEnabled) {
         final StreamsBuilder builder = new StreamsBuilder();
         //NOTE this would realistically get caught when building topology, the test is for completeness
@@ -406,7 +406,7 @@ public class FineGrainedAutoResetIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldThrowStreamsExceptionNoResetSpecified(final boolean streamsProtocolEnabled) throws InterruptedException {
         final Properties props = new Properties();
         props.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, 0);

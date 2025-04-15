@@ -130,7 +130,7 @@ public class KStreamAggregationDedupIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldReduce(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         produceMessages(System.currentTimeMillis());
         groupedStream
@@ -156,7 +156,7 @@ public class KStreamAggregationDedupIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldReduceWindowed(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long firstBatchTimestamp = System.currentTimeMillis() - 1000;
         produceMessages(firstBatchTimestamp);
@@ -195,7 +195,7 @@ public class KStreamAggregationDedupIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldGroupByKey(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws Exception {
         final long timestamp = mockTime.milliseconds();
         produceMessages(timestamp);

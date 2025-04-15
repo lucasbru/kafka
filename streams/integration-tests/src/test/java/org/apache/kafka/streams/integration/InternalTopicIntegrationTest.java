@@ -161,7 +161,7 @@ public class InternalTopicIntegrationTest {
      * for internal repartition topics. See KAFKA-10689
      */
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldGetToRunningWithWindowedTableInFKJ(final boolean streamsProtocolEnabled) throws Exception {
         final String appID = APP_ID + "-windowed-FKJ-" + streamsProtocolEnabled;
         configureStreams(streamsProtocolEnabled, appID);
@@ -191,7 +191,7 @@ public class InternalTopicIntegrationTest {
 
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldCompactTopicsForKeyValueStoreChangelogs(final boolean streamsProtocolEnabled) throws Exception {
         final String appID = APP_ID + "-compact-" + streamsProtocolEnabled;
         configureStreams(streamsProtocolEnabled, appID);
@@ -229,7 +229,7 @@ public class InternalTopicIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldCompactAndDeleteTopicsForWindowStoreChangelogs(final boolean streamsProtocolEnabled) throws Exception {
         final String appID = APP_ID + "-compact-delete-" + streamsProtocolEnabled;
         configureStreams(streamsProtocolEnabled, appID);

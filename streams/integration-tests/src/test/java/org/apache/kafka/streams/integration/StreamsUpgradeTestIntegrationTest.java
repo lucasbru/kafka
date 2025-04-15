@@ -24,6 +24,7 @@ import org.apache.kafka.streams.tests.StreamsUpgradeTest;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -42,6 +43,7 @@ import static org.apache.kafka.test.TestUtils.retryOnExceptionWithTimeout;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+@Disabled("Does not apply to new protocol")
 @Tag("integration")
 @Timeout(600)
 public class StreamsUpgradeTestIntegrationTest {

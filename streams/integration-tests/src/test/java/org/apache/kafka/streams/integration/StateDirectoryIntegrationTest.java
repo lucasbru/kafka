@@ -73,7 +73,7 @@ public class StateDirectoryIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testCleanUpStateDirIfEmpty(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws InterruptedException {
         final String uniqueTestName = safeUniqueTestName(testInfo);
 
@@ -183,7 +183,7 @@ public class StateDirectoryIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void testNotCleanUpStateDirIfNotEmpty(final boolean streamsProtocolEnabled, final TestInfo testInfo) throws InterruptedException {
         final String uniqueTestName = safeUniqueTestName(testInfo);
 

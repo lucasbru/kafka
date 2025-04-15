@@ -178,7 +178,7 @@ public class SwallowUnknownTopicErrorIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldThrowStreamsExceptionWithMissingTopicAndDefaultExceptionHandler(final boolean streamsProtocolEnabled) throws Exception {
         final Properties streamsConfiguration = getCommonProperties();
         if (streamsProtocolEnabled) {

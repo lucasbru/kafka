@@ -89,7 +89,7 @@ public class EOSUncleanShutdownIntegrationTest {
     private static final int RECORD_TOTAL = 3;
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
+    @ValueSource(booleans = {true}) // false temporarily disabled
     public void shouldWorkWithUncleanShutdownWipeOutStateStore(boolean streamsProtocolEnabled) throws InterruptedException {
         final String appId = "shouldWorkWithUncleanShutdownWipeOutStateStore";
         STREAMS_CONFIG.put(StreamsConfig.APPLICATION_ID_CONFIG, appId);

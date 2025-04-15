@@ -22,6 +22,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -55,6 +56,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -68,7 +70,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 @Tag("integration")
 @Timeout(600)
 public class RangeQueryIntegrationTest {
-    private static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    private static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(1);
     private static final Properties STREAMS_CONFIG = new Properties();
     private static final Long COMMIT_INTERVAL = 100L;
     private static String inputStream;
@@ -138,6 +140,7 @@ public class RangeQueryIntegrationTest {
         STREAMS_CONFIG.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         STREAMS_CONFIG.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, COMMIT_INTERVAL);
         STREAMS_CONFIG.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory().getPath());
+        STREAMS_CONFIG.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
     }
 
     @AfterAll

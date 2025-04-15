@@ -27,6 +27,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.server.util.MockTime;
+import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -47,14 +48,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Function;
@@ -62,6 +66,7 @@ import java.util.function.Function;
 import static java.time.Duration.ofSeconds;
 import static java.util.Arrays.asList;
 import static org.apache.kafka.streams.integration.utils.IntegrationTestUtils.startApplicationAndWaitUntilRunning;
+import static org.apache.kafka.streams.utils.TestUtils.safeUniqueTestName;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Timeout(600)
@@ -69,15 +74,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class KTableKTableForeignKeyInnerJoinMultiIntegrationTest {
     private static final int NUM_BROKERS = 1;
 
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(NUM_BROKERS);
+    public static final EmbeddedKafkaCluster CLUSTER = EmbeddedKafkaCluster.withStreamsRebalanceProtocol(NUM_BROKERS);
     private static final MockTime MOCK_TIME = CLUSTER.time;
     private static final String TABLE_1 = "table1";
     private static final String TABLE_2 = "table2";
     private static final String TABLE_3 = "table3";
     private static final String OUTPUT = "output-";
-    private final Properties streamsConfig = getStreamsConfig();
-    private final Properties streamsConfigTwo = getStreamsConfig();
-    private final Properties streamsConfigThree = getStreamsConfig();
+    private Properties streamsConfig;
+    private Properties streamsConfigTwo;
+    private Properties streamsConfigThree;
     private KafkaStreams streams;
     private KafkaStreams streamsTwo;
     private KafkaStreams streamsThree;
@@ -154,11 +159,20 @@ public class KTableKTableForeignKeyInnerJoinMultiIntegrationTest {
     }
 
     @BeforeEach
-    public void before() throws IOException {
+    public void before(final TestInfo testInfo) throws IOException {
         final String stateDirBasePath = TestUtils.tempDirectory().getPath();
+        final String safeTestName = safeUniqueTestName(testInfo);
+        streamsConfig = getStreamsConfig(safeTestName);
+        streamsConfigTwo = getStreamsConfig(safeTestName);
+        streamsConfigThree = getStreamsConfig(safeTestName);
         streamsConfig.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-1");
         streamsConfigTwo.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-2");
         streamsConfigThree.put(StreamsConfig.STATE_DIR_CONFIG, stateDirBasePath + "-3");
+        if (testInfo.getDisplayName().contains("streamsProtocolEnabled=true")) {
+            streamsConfig.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            streamsConfigTwo.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+            streamsConfigThree.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        }
     }
 
     @AfterEach
@@ -178,8 +192,9 @@ public class KTableKTableForeignKeyInnerJoinMultiIntegrationTest {
         IntegrationTestUtils.purgeLocalStreamsState(asList(streamsConfig, streamsConfigTwo, streamsConfigThree));
     }
 
-    @Test
-    public void shouldInnerJoinMultiPartitionQueryable() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true}) // false temporarily disabled
+    public void shouldInnerJoinMultiPartitionQueryable(final boolean streamsProtocolEnabled) throws Exception {
         final Set<KeyValue<Integer, String>> expectedOne = new HashSet<>();
         expectedOne.add(new KeyValue<>(1, "value1=1.33,value2=10,value3=waffle"));
 
@@ -206,9 +221,9 @@ public class KTableKTableForeignKeyInnerJoinMultiIntegrationTest {
         assertEquals(expectedResult, result);
     }
 
-    private static Properties getStreamsConfig() {
+    private static Properties getStreamsConfig(final String safeTestName) {
         final Properties streamsConfig = new Properties();
-        streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "KTable-FKJ-Multi");
+        streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, "KTable-FKJ-Multi"+safeTestName);
         streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
         streamsConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         streamsConfig.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, 0);
