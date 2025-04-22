@@ -343,6 +343,8 @@ public class PauseResumeIntegrationTest {
         properties2.put(StreamsConfig.NUM_STANDBY_REPLICAS_CONFIG, 1);
         produceToInputTopics(INPUT_STREAM_1, STANDARD_INPUT_DATA);
 
+        CLUSTER.setStandbyReplicas(properties1.getProperty(StreamsConfig.APPLICATION_ID_CONFIG), 1);
+
         kafkaStreams = buildKafkaStreams(OUTPUT_STREAM_1, properties1);
         kafkaStreams2 = buildKafkaStreams(OUTPUT_STREAM_1, properties2);
         kafkaStreams.start();

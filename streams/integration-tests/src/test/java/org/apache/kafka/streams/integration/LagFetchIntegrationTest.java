@@ -169,6 +169,7 @@ public class LagFetchIntegrationTest {
             props.put(StreamsConfig.TOPOLOGY_OPTIMIZATION_CONFIG, optimization);
             props.put(StreamsConfig.NUM_STANDBY_REPLICAS_CONFIG, 1);
             props.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory(stateStoreName + i).getAbsolutePath());
+            CLUSTER.setStandbyReplicas(props.getProperty(StreamsConfig.APPLICATION_ID_CONFIG), 1);
 
             final StreamsBuilder builder = new StreamsBuilder();
             final KTable<String, Long> t1 = builder.table(inputTopicName, Materialized.as(stateStoreName));

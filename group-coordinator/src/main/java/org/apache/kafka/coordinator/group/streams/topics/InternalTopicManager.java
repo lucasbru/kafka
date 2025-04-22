@@ -60,6 +60,9 @@ public class InternalTopicManager {
         final Logger log = logContext.logger(InternalTopicManager.class);
         final Collection<StreamsGroupTopologyValue.Subtopology> subtopologies = topology.subtopologies().values();
 
+        log.error("Received topology {}", topology);
+        log.error("Received topicMetadata {}", topicMetadata.values());
+
         final Map<String, Collection<Set<String>>> copartitionGroupsBySubtopology =
             subtopologies.stream()
                 .collect(Collectors.toMap(

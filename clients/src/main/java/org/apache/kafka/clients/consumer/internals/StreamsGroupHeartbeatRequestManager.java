@@ -530,6 +530,13 @@ public class StreamsGroupHeartbeatRequestManager implements RequestManager {
                     streamsRebalanceData.setMissingSourceTopic(status.statusDetail());
                     isMissingSourceTopic = true;
                 }
+                if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.INCORRECTLY_PARTITIONED_TOPICS.code()) {
+                    streamsRebalanceData.setIncorrectlyPartitionedTopic(status.statusDetail());
+                    isMissingSourceTopic = true;
+                }
+                if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.SHUTDOWN_APPLICATION.code()) {
+                    streamsRebalanceData.requestShutdown();
+                }
             }
             if (!isMissingSourceTopic) {
                 streamsRebalanceData.setMissingSourceTopic(null);

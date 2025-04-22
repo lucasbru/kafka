@@ -302,6 +302,8 @@ public class StreamsRebalanceData {
 
     private final AtomicReference<String> missingSourceTopic = new AtomicReference<>(null);
 
+    private final AtomicReference<String> incorrectlyPartitionedTopic = new AtomicReference<>(null);
+
     public StreamsRebalanceData(final UUID processId,
                                 final Optional<HostInfo> endpoint,
                                 final Map<String, Subtopology> subtopologies,
@@ -346,6 +348,14 @@ public class StreamsRebalanceData {
 
     public Map<HostInfo, List<TopicPartition>> partitionsByHost() {
         return partitionsByHost.get();
+    }
+
+    public void setIncorrectlyPartitionedTopic(final String error) {
+        incorrectlyPartitionedTopic.set(error);
+    }
+
+    public String incorrectlyPartitionedTopic() {
+        return incorrectlyPartitionedTopic.get();
     }
 
     public void setMissingSourceTopic(final String error) {

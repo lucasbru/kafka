@@ -1060,7 +1060,7 @@ public class StreamsGroup implements Group {
 
     public void setShutdownRequestMemberId(final String memberId) {
         if (shutdownRequestMemberId.isEmpty()) {
-            log.info("[GroupId {}][MemberId {}] Shutdown requested for the streams application.", groupId, memberId);
+            log.error("[GroupId {}][MemberId {}] Shutdown requested for the streams application.", groupId, memberId);
             shutdownRequestMemberId = Optional.of(memberId);
         }
     }
@@ -1071,7 +1071,7 @@ public class StreamsGroup implements Group {
 
     private void clearShutdownRequestMemberId() {
         if (shutdownRequestMemberId.isPresent()) {
-            log.info("[GroupId {}] Clearing shutdown requested for the streams application.", groupId);
+            log.error("[GroupId {}] Clearing shutdown requested for the streams application.", groupId);
             shutdownRequestMemberId = Optional.empty();
         }
     }

@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.streams.integration;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -263,6 +264,7 @@ public class MetricsIntegrationTest {
         streamsConfiguration.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, NUM_THREADS);
         streamsConfiguration.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory().getPath());
         streamsConfiguration.put(StreamsConfig.GROUP_PROTOCOL_CONFIG, GroupProtocol.STREAMS.name().toLowerCase(Locale.getDefault()));
+        streamsConfiguration.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, 100);
     }
 
     @AfterEach
@@ -284,6 +286,8 @@ public class MetricsIntegrationTest {
             () -> kafkaStreams.state() == State.RUNNING,
             timeout,
             () -> "Kafka Streams application did not reach state RUNNING in " + timeout + " ms");
+
+        Thread.sleep(8000);
 
         verifyAliveStreamThreadsMetric();
         verifyStateMetric(State.RUNNING);

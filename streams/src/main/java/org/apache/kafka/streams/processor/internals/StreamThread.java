@@ -54,6 +54,7 @@ import org.apache.kafka.streams.errors.MissingSourceTopicException;
 import org.apache.kafka.streams.errors.StreamsException;
 import org.apache.kafka.streams.errors.TaskCorruptedException;
 import org.apache.kafka.streams.errors.TaskMigratedException;
+import org.apache.kafka.streams.errors.TopologyException;
 import org.apache.kafka.streams.internals.metrics.ClientMetrics;
 import org.apache.kafka.streams.internals.metrics.StreamsThreadMetricsDelegatingReporter;
 import org.apache.kafka.streams.processor.StandbyUpdateListener;
@@ -1073,8 +1074,9 @@ public class StreamThread extends Thread implements ProcessingThread {
         shutdownErrorHook.run();
     }
 
-    public void sendShutdownRequest(final AssignorError assignorError) {
-        assignmentErrorCode.set(assignorError.code());
+    public void sendShutdownRequest() {
+      assignmentErrorCode.set(AssignorError.SHUTDOWN_REQUESTED.code());
+      streamsRebalanceData.ifPresent(StreamsRebalanceData::requestShutdown);
     }
 
     private void handleTaskMigrated(final TaskMigratedException e) {
@@ -1482,13 +1484,16 @@ public class StreamThread extends Thread implements ProcessingThread {
         if (streamsRebalanceData.isPresent()) {
 
             if (streamsRebalanceData.get().shutdownRequested()) {
-                assignmentErrorCode.set(AssignorError.SHUTDOWN_REQUESTED.code());
+                shutdownErrorHook.run();
             }
 
-            String error = streamsRebalanceData.get().missingSourceTopic();
-            if (error != null) {
+            Optional.ofNullable(streamsRebalanceData.get().incorrectlyPartitionedTopic()).ifPresent( error -> {
+                throw new TopologyException(error);
+            });
+
+            Optional.ofNullable(streamsRebalanceData.get().missingSourceTopic()).ifPresent( error -> {
                 throw new MissingSourceTopicException("One or more source topics were missing during rebalance:" + error);
-            }
+            });
         }
     }
 

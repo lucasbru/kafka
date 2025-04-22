@@ -155,6 +155,7 @@ public class KStreamRepartitionIntegrationTest {
         final int inputTopicRepartitionedNumOfPartitions = 2;
 
         CLUSTER.createTopic(topicB, topicBNumberOfPartitions, 1);
+        Thread.sleep(100); // Wait for topic creation to propagate
 
         final StreamsBuilder builder = new StreamsBuilder();
 
