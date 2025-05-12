@@ -45,6 +45,6 @@ bin/kafka-streams-groups.sh --members --describe --group streams-wordcount --boo
 
 # TAB5: Enable standby replicas
 ```
-kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups
+bin/kafka-configs.sh --bootstrap-server localhost:9092 --alter --entity-type groups
   --entity-name my_streams_app --add-config streams.num.standby.replicas=1
 ```
