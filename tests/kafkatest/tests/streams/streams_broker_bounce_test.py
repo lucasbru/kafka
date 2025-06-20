@@ -112,8 +112,8 @@ class StreamsBrokerBounceTest(Test):
                        'configs': {"min.insync.replicas": 2} },
             'tagg' : { 'partitions': self.partitions, 'replication-factor': self.replication,
                        'configs': {"min.insync.replicas": 2} },
-            '__consumer_offsets' : { 'partitions': 50, 'replication-factor': self.replication,
-                       'configs': {"min.insync.replicas": 2} }
+            '__consumer_offsets' : { 'partitions': self.partitions, 'replication-factor': self.replication,
+                                     'configs': {"min.insync.replicas": 2} }
         }
 
     def fail_broker_type(self, failure_mode, broker_type):
@@ -151,8 +151,11 @@ class StreamsBrokerBounceTest(Test):
         
     def setup_system(self, start_processor=True, num_threads=3):
         # Setup phase
-
-        self.kafka = KafkaService(self.test_context, num_nodes=self.replication, zk=None, topics=self.topics)
+        use_streams_groups = True if group_protocol == 'streams' else False
+        self.kafka = KafkaService(self.test_context, num_nodes=self.replication, zk=None, topics=self.topics, server_prop_overrides=[
+            ["offsets.topic.num.partitions", self.partitions],
+            ["offsets.topic.replication.factor", self.replication]
+        ])
         self.kafka.start()
 
         # allow some time for topics to be created
@@ -281,7 +284,7 @@ class StreamsBrokerBounceTest(Test):
         # Set min.insync.replicas to 1 because in the last stage of the test there is only one broker left.
         # Otherwise the last offset commit will never succeed and time out and potentially take longer as
         # duration passed to the close method of the Kafka Streams client.
-        self.topics['__consumer_offsets'] = { 'partitions': 50, 'replication-factor': self.replication,
+        self.topics['__consumer_offsets'] = { 'partitions': self.partitions, 'replication-factor': self.replication,
                                               'configs': {"min.insync.replicas": 1} }
 
         self.setup_system()
