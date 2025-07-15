@@ -19,6 +19,7 @@ package org.apache.kafka.streams.integration;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.LogCaptureAppender;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -28,11 +29,13 @@ import org.apache.kafka.streams.errors.StreamsUncaughtExceptionHandler.StreamThr
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
 import org.apache.kafka.streams.integration.utils.IntegrationTestUtils;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.processor.PunctuationType;
 import org.apache.kafka.streams.processor.api.Processor;
 import org.apache.kafka.streams.processor.api.ProcessorContext;
 import org.apache.kafka.streams.processor.api.Record;
 import org.apache.kafka.streams.processor.internals.StreamThread;
+import org.apache.kafka.streams.state.Stores;
 import org.apache.kafka.test.TestUtils;
 
 import org.hamcrest.Matchers;
@@ -79,34 +82,45 @@ import static org.junit.jupiter.api.Assertions.fail;
 @Timeout(600)
 @Tag("integration")
 public class AdjustStreamThreadCountTest {
-    public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(1);
+    public static EmbeddedKafkaCluster CLUSTER;
 
     @BeforeAll
-    public static void startCluster() throws IOException {
+    public static void startCluster() throws IOException, InterruptedException {
+        CLUSTER = new EmbeddedKafkaCluster(1);
         CLUSTER.start();
     }
 
     @AfterAll
-    public static void closeCluster() {
+    public static void closeCluster() throws InterruptedException {
         CLUSTER.stop();
+        CLUSTER = null;
     }
 
     private final List<KafkaStreams.State> stateTransitionHistory = new ArrayList<>();
     private static String inputTopic;
+    private static String outputTopic;
     private static StreamsBuilder builder;
     private static Properties properties;
     private static String appId = "";
     public static final Duration DEFAULT_DURATION = Duration.ofSeconds(30);
 
     @BeforeEach
-    public void setup(final TestInfo testInfo) {
+    public void setup(final TestInfo testInfo) throws Exception {
         final String testId = safeUniqueTestName(testInfo);
         appId = "appId_" + testId;
         inputTopic = "input" + testId;
-        IntegrationTestUtils.cleanStateBeforeTest(CLUSTER, inputTopic);
+        outputTopic = "output" + testId;
+        IntegrationTestUtils.cleanStateBeforeTest(CLUSTER, inputTopic, outputTopic);
 
         builder = new StreamsBuilder();
-        builder.stream(inputTopic);
+        CLUSTER.createTopics(inputTopic);
+        CLUSTER.createTopics(outputTopic);
+
+        builder.table(inputTopic, Materialized.<Integer, Bytes>as(
+                Stores.persistentTimestampedKeyValueStore(testId + "-store"))
+            .withKeySerde(Serdes.Integer())
+            .withValueSerde(Serdes.Bytes())
+            .withCachingDisabled()).toStream().to(outputTopic);
 
         properties = mkObjectProperties(
             mkMap(
