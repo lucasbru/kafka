@@ -255,10 +255,10 @@ public class StreamsCoordinatorRecordHelpers {
                     .setMemberEpoch(member.memberEpoch())
                     .setPreviousMemberEpoch(member.previousMemberEpoch())
                     .setState(member.state().value())
-                    .setActiveTasks(toTaskIds(member.assignedTasks().activeTasks()))
+                    .setActiveTasks(toTaskIdsWithEpochs(member.assignedTasks().activeTasks(), member.assignmentEpochs()))
                     .setStandbyTasks(toTaskIds(member.assignedTasks().standbyTasks()))
                     .setWarmupTasks(toTaskIds(member.assignedTasks().warmupTasks()))
-                    .setActiveTasksPendingRevocation(toTaskIds(member.tasksPendingRevocation().activeTasks()))
+                    .setActiveTasksPendingRevocation(toTaskIdsWithEpochs(member.tasksPendingRevocation().activeTasks(), member.assignmentEpochs()))
                     .setStandbyTasksPendingRevocation(toTaskIds(member.tasksPendingRevocation().standbyTasks()))
                     .setWarmupTasksPendingRevocation(toTaskIds(member.tasksPendingRevocation().warmupTasks())),
                 (short) 0
@@ -296,6 +296,42 @@ public class StreamsCoordinatorRecordHelpers {
                 .setSubtopologyId(subtopologyId)
                 .setPartitions(partitions.stream().sorted().toList()))
         );
+        taskIds.sort(Comparator.comparing(StreamsGroupCurrentMemberAssignmentValue.TaskIds::subtopologyId));
+        return taskIds;
+    }
+
+    private static List<StreamsGroupCurrentMemberAssignmentValue.TaskIds> toTaskIdsWithEpochs(
+        Map<String, Set<Integer>> tasks,
+        Map<String, Map<Integer, Integer>> assignmentEpochs
+    ) {
+        List<StreamsGroupCurrentMemberAssignmentValue.TaskIds> taskIds = new ArrayList<>(tasks.size());
+        tasks.forEach((subtopologyId, partitions) -> {
+            List<Integer> sortedPartitions = partitions.stream().sorted().toList();
+            
+            Map<Integer, Integer> subtopologyEpochs = assignmentEpochs.get(subtopologyId);
+            if (subtopologyEpochs == null || subtopologyEpochs.isEmpty()) {
+                throw new IllegalStateException(
+                    "Subtopology " + subtopologyId + " is assigned but does not have assignment epochs"
+                );
+            }
+            
+            List<Integer> epochs = new ArrayList<>(sortedPartitions.size());
+            for (Integer partition : sortedPartitions) {
+                Integer epoch = subtopologyEpochs.get(partition);
+                if (epoch == null) {
+                    throw new IllegalStateException(
+                        "Partition " + partition + " in subtopology " + subtopologyId + 
+                        " is assigned but does not have an assignment epoch"
+                    );
+                }
+                epochs.add(epoch);
+            }
+            
+            taskIds.add(new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
+                .setSubtopologyId(subtopologyId)
+                .setPartitions(sortedPartitions)
+                .setAssignmentEpochs(epochs));
+        });
         taskIds.sort(Comparator.comparing(StreamsGroupCurrentMemberAssignmentValue.TaskIds::subtopologyId));
         return taskIds;
     }

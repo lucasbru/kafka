@@ -22,6 +22,7 @@ import org.apache.kafka.coordinator.group.generated.StreamsGroupMemberMetadataVa
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,6 +52,9 @@ import java.util.stream.Collectors;
  * @param clientTags                    Tags of the client of the member used for rack-aware assignment.
  * @param assignedTasks                 Tasks assigned to the member.
  * @param tasksPendingRevocation        Tasks owned by the member pending revocation.
+ * @param assignmentEpochs              The assignment epoch for each active task partition. The outer map key is the
+ *                                      subtopology ID, and the inner map key is the partition ID. Used to fence
+ *                                      zombie commit requests.
  */
 @SuppressWarnings("checkstyle:JavaNCSS")
 public record StreamsGroupMember(String memberId,
@@ -67,7 +71,8 @@ public record StreamsGroupMember(String memberId,
                                  Optional<StreamsGroupMemberMetadataValue.Endpoint> userEndpoint,
                                  Map<String, String> clientTags,
                                  TasksTuple assignedTasks,
-                                 TasksTuple tasksPendingRevocation) {
+                                 TasksTuple tasksPendingRevocation,
+                                 Map<String, Map<Integer, Integer>> assignmentEpochs) {
 
     public StreamsGroupMember {
         Objects.requireNonNull(memberId, "memberId cannot be null");
@@ -96,6 +101,7 @@ public record StreamsGroupMember(String memberId,
         private Map<String, String> clientTags = null;
         private TasksTuple assignedTasks = null;
         private TasksTuple tasksPendingRevocation = null;
+        private Map<String, Map<Integer, Integer>> assignmentEpochs = null;
 
         public Builder(String memberId) {
             this.memberId = Objects.requireNonNull(memberId, "memberId cannot be null");
@@ -107,6 +113,7 @@ public record StreamsGroupMember(String memberId,
             this.memberId = member.memberId;
             this.memberEpoch = member.memberEpoch;
             this.previousMemberEpoch = member.previousMemberEpoch;
+            this.assignmentEpochs = member.assignmentEpochs;
             this.instanceId = member.instanceId;
             this.rackId = member.rackId;
             this.rebalanceTimeoutMs = member.rebalanceTimeoutMs;
@@ -135,6 +142,11 @@ public record StreamsGroupMember(String memberId,
 
         public Builder setPreviousMemberEpoch(int previousMemberEpoch) {
             this.previousMemberEpoch = previousMemberEpoch;
+            return this;
+        }
+
+        public Builder setAssignmentEpochs(Map<String, Map<Integer, Integer>> assignmentEpochs) {
+            this.assignmentEpochs = assignmentEpochs;
             return this;
         }
 
@@ -267,6 +279,7 @@ public record StreamsGroupMember(String memberId,
                     assignmentFromTaskIds(record.warmupTasksPendingRevocation())
                 )
             );
+            setAssignmentEpochs(assignmentEpochsFromRecord(record));
             return this;
         }
 
@@ -278,22 +291,80 @@ public record StreamsGroupMember(String memberId,
                 taskIds -> Set.copyOf(taskIds.partitions())));
         }
 
+        /**
+         * Gets assignment epochs from a current assignment record.
+         * 
+         * @param record
+         * @return A map from subtopology ID to partition-to-epoch map
+         */
+        private static Map<String, Map<Integer, Integer>> assignmentEpochsFromRecord(
+            StreamsGroupCurrentMemberAssignmentValue record
+        ) {
+            Map<String, Map<Integer, Integer>> result = new HashMap<>();
+            int memberEpoch = record.memberEpoch();
+
+            for (List<StreamsGroupCurrentMemberAssignmentValue.TaskIds> taskIdsList : 
+                 List.of(record.activeTasks(), record.activeTasksPendingRevocation())) {
+                for (StreamsGroupCurrentMemberAssignmentValue.TaskIds taskIds : taskIdsList) {
+                    List<Integer> partitions = taskIds.partitions();
+                    List<Integer> epochs = taskIds.assignmentEpochs();
+
+                    String subtopologyId = taskIds.subtopologyId();
+                    Map<Integer, Integer> partitionEpochMap = result.computeIfAbsent(
+                        subtopologyId, 
+                        k -> new HashMap<>()
+                    );
+
+                    if (epochs != null) {
+                        if (epochs.size() != partitions.size()) {
+                            throw new IllegalStateException(
+                                "Assignment epochs must be provided for all partitions. " +
+                                "Subtopology " + subtopologyId + " has " + partitions.size() + " partitions but " + epochs.size() + " epochs"
+                            );
+                        }
+
+                        for (int i = 0; i < partitions.size(); i++) {
+                            partitionEpochMap.putIfAbsent(partitions.get(i), epochs.get(i));
+                        }
+                    } else {
+                        // Legacy record without epochs: use member epoch from record for all partitions without explicit epochs
+                        for (int partition : partitions) {
+                            partitionEpochMap.putIfAbsent(partition, memberEpoch);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
         public static Builder withDefaults(String memberId) {
             return new Builder(memberId)
                 .setRebalanceTimeoutMs(-1)
                 .setTopologyEpoch(-1)
                 .setInstanceId(null)
                 .setRackId(null)
+                .setClientId("")
+                .setClientHost("")
                 .setProcessId("")
                 .setClientTags(Collections.emptyMap())
                 .setState(MemberState.STABLE)
                 .setMemberEpoch(0)
                 .setAssignedTasks(TasksTuple.EMPTY)
                 .setTasksPendingRevocation(TasksTuple.EMPTY)
-                .setUserEndpoint(null);
+                .setUserEndpoint(null)
+                .setAssignmentEpochs(Collections.emptyMap());
         }
 
         public StreamsGroupMember build() {
+            // Validate that every active task has a corresponding assignment epoch
+            if (assignmentEpochs != null && assignedTasks != null) {
+                validateAssignmentEpochs(assignedTasks.activeTasks(), assignmentEpochs, "assignedTasks");
+            }
+            if (assignmentEpochs != null && tasksPendingRevocation != null) {
+                validateAssignmentEpochs(tasksPendingRevocation.activeTasks(), assignmentEpochs, "tasksPendingRevocation");
+            }
+            
             return new StreamsGroupMember(
                 memberId,
                 memberEpoch,
@@ -309,8 +380,36 @@ public record StreamsGroupMember(String memberId,
                 userEndpoint,
                 clientTags,
                 assignedTasks,
-                tasksPendingRevocation
+                tasksPendingRevocation,
+                assignmentEpochs
             );
+        }
+        
+        private void validateAssignmentEpochs(
+            Map<String, Set<Integer>> activeTasks,
+            Map<String, Map<Integer, Integer>> assignmentEpochs,
+            String fieldName
+        ) {
+            for (Map.Entry<String, Set<Integer>> entry : activeTasks.entrySet()) {
+                String subtopologyId = entry.getKey();
+                Set<Integer> partitions = entry.getValue();
+                
+                Map<Integer, Integer> subtopologyEpochs = assignmentEpochs.get(subtopologyId);
+                if (subtopologyEpochs == null) {
+                    throw new IllegalStateException(
+                        "Subtopology " + subtopologyId + " in " + fieldName + " does not have assignment epochs"
+                    );
+                }
+                
+                for (Integer partition : partitions) {
+                    if (!subtopologyEpochs.containsKey(partition)) {
+                        throw new IllegalStateException(
+                            "Partition " + partition + " in subtopology " + subtopologyId + 
+                            " in " + fieldName + " does not have an assignment epoch"
+                        );
+                    }
+                }
+            }
         }
     }
 

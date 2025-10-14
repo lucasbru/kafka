@@ -39,6 +39,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -383,6 +385,10 @@ class StreamsCoordinatorRecordHelpersTest {
 
     @Test
     public void testNewStreamsGroupCurrentAssignmentRecord() {
+        // Create assignment epochs for active tasks
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        assignmentEpochs.put(SUBTOPOLOGY_1, Map.of(1, 1, 2, 1, 3, 1));
+        
         StreamsGroupMember member = new StreamsGroupMember.Builder(MEMBER_ID)
             .setRackId(RACK_1)
             .setInstanceId(INSTANCE_ID)
@@ -418,6 +424,7 @@ class StreamsCoordinatorRecordHelpersTest {
                     SUBTOPOLOGY_3, Set.of(7, 8, 9)
                 )
             ))
+            .setAssignmentEpochs(assignmentEpochs)
             .build();
 
         CoordinatorRecord expectedRecord = CoordinatorRecord.record(
@@ -433,6 +440,7 @@ class StreamsCoordinatorRecordHelpersTest {
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
                             .setSubtopologyId(SUBTOPOLOGY_1)
                             .setPartitions(List.of(1, 2, 3))
+                            .setAssignmentEpochs(List.of(1, 1, 1))
                     ))
                     .setStandbyTasks(List.of(
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
@@ -448,6 +456,7 @@ class StreamsCoordinatorRecordHelpersTest {
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
                             .setSubtopologyId(SUBTOPOLOGY_1)
                             .setPartitions(List.of(1, 2, 3))
+                            .setAssignmentEpochs(List.of(1, 1, 1))
                     ))
                     .setStandbyTasksPendingRevocation(List.of(
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
@@ -483,6 +492,7 @@ class StreamsCoordinatorRecordHelpersTest {
             .setClientTags(Map.of(TAG_1, VALUE_1, TAG_2, VALUE_2))
             .setAssignedTasks(new TasksTuple(Map.of(), Map.of(), Map.of()))
             .setTasksPendingRevocation(new TasksTuple(Map.of(), Map.of(), Map.of()))
+            .setAssignmentEpochs(Collections.emptyMap())
             .build();
 
         CoordinatorRecord expectedRecord = CoordinatorRecord.record(

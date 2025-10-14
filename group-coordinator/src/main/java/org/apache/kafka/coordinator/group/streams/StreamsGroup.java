@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.group.streams;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.StaleMemberEpochException;
 import org.apache.kafka.common.errors.UnknownMemberIdException;
@@ -31,6 +32,8 @@ import org.apache.kafka.coordinator.group.Group;
 import org.apache.kafka.coordinator.group.OffsetExpirationCondition;
 import org.apache.kafka.coordinator.group.OffsetExpirationConditionImpl;
 import org.apache.kafka.coordinator.group.Utils;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyValue.Subtopology;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyValue.TopicInfo;
 import org.apache.kafka.coordinator.group.streams.topics.ConfiguredSubtopology;
 import org.apache.kafka.coordinator.group.streams.topics.ConfiguredTopology;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -51,6 +54,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.streams.StreamsGroup.StreamsGroupState.ASSIGNING;
 import static org.apache.kafka.coordinator.group.streams.StreamsGroup.StreamsGroupState.DEAD;
@@ -672,6 +676,7 @@ public class StreamsGroup implements Group {
      * @param memberEpoch       The member epoch.
      * @param isTransactional   Whether the offset commit is transactional or not.
      * @param apiVersion        The api version.
+     * @param topicIdPartitions Stream of topic-partition pairs being committed.
      * @throws UnknownMemberIdException  If the member is not found.
      * @throws StaleMemberEpochException If the provided member epoch doesn't match the actual member epoch.
      */
@@ -681,7 +686,8 @@ public class StreamsGroup implements Group {
         String groupInstanceId,
         int memberEpoch,
         boolean isTransactional,
-        int apiVersion
+        int apiVersion,
+        Stream<TopicIdPartition> topicIdPartitions
     ) throws UnknownMemberIdException, StaleMemberEpochException {
         // When the member epoch is -1, the request comes from either the admin client
         // or a consumer which does not use the group management facility. In this case,
@@ -703,7 +709,107 @@ public class StreamsGroup implements Group {
                 "by members using the streams group protocol");
         }
 
-        validateMemberEpoch(memberEpoch, member.memberEpoch());
+        // Validate per-partition assignment epochs if available
+        validatePartitionAssignmentEpochs(member, memberEpoch, topicIdPartitions);
+    }
+
+    /**
+     * Validates that assignment epochs for all committed partitions are less than or equal to the member epoch.
+     * This ensures that zombie members cannot commit offsets for partitions they no longer own.
+     *
+     * @param member            The member committing offsets.
+     * @param memberEpoch       The member epoch provided in the request.
+     * @param topicIdPartitions Stream of topic-partition pairs being committed.
+     * @throws StaleMemberEpochException If any partition has an assignment epoch greater than the member epoch.
+     */
+    private void validatePartitionAssignmentEpochs(
+        StreamsGroupMember member,
+        int memberEpoch,
+        Stream<TopicIdPartition> topicIdPartitions
+    ) throws StaleMemberEpochException {
+        Map<String, Map<Integer, Integer>> assignmentEpochs = member.assignmentEpochs();
+        
+        // If there are no assignment epochs, fall back to global validation
+        if (assignmentEpochs == null || assignmentEpochs.isEmpty()) {
+            validateMemberEpoch(memberEpoch, member.memberEpoch());
+            return;
+        }
+        
+        // Validate that the member epoch does not exceed the current member epoch
+        if (memberEpoch > member.memberEpoch()) {
+            throw new StaleMemberEpochException(String.format("The received member epoch %d does not match "
+                + "the expected member epoch %d.", memberEpoch, member.memberEpoch()));
+        }
+        
+        // Perform per-partition validation if topology is available
+        Optional<StreamsTopology> maybeTopology = topology.get();
+        if (maybeTopology.isPresent()) {
+            validatePerPartitionAssignmentEpochs(
+                memberEpoch,
+                assignmentEpochs,
+                maybeTopology.get(),
+                topicIdPartitions
+            );
+        }
+    }
+
+    /**
+     * Validates each partition's assignment epoch against the member epoch.
+     */
+    private void validatePerPartitionAssignmentEpochs(
+        int memberEpoch,
+        Map<String, Map<Integer, Integer>> assignmentEpochs,
+        StreamsTopology topology,
+        Stream<TopicIdPartition> topicIdPartitions
+    ) throws StaleMemberEpochException {
+        Map<String, String> topicToSubtopologyId = buildTopicToSubtopologyMap(topology);
+        
+        // Validate each partition's assignment epoch
+        topicIdPartitions.forEach(topicIdPartition -> {
+            String topicName = topicIdPartition.topic();
+            int partition = topicIdPartition.partition();
+            
+            // Find the subtopology for this topic
+            String subtopologyId = topicToSubtopologyId.get(topicName);
+            if (subtopologyId != null) {
+                // Get the assignment epoch for this partition
+                Map<Integer, Integer> partitionEpochs = assignmentEpochs.get(subtopologyId);
+                if (partitionEpochs != null) {
+                    Integer assignmentEpoch = partitionEpochs.get(partition);
+                    if (assignmentEpoch != null && assignmentEpoch > memberEpoch) {
+                        throw new StaleMemberEpochException(String.format(
+                            "Cannot commit offset for partition %s-%d with assignment epoch %d using member epoch %d. " +
+                            "The assignment epoch must be less than or equal to the member epoch.",
+                            topicName, partition, assignmentEpoch, memberEpoch));
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Builds a map from topic name to subtopology ID for quick lookup.
+     */
+    private Map<String, String> buildTopicToSubtopologyMap(StreamsTopology topology) {
+        Map<String, String> topicToSubtopologyId = new HashMap<>();
+        Map<String, Subtopology> subtopologies = topology.subtopologies();
+        
+        for (Map.Entry<String, Subtopology> entry : subtopologies.entrySet()) {
+            String subtopologyId = entry.getKey();
+            Subtopology subtopology = entry.getValue();
+            
+            // Map source topics
+            for (String sourceTopic : subtopology.sourceTopics()) {
+                topicToSubtopologyId.put(sourceTopic, subtopologyId);
+            }
+            
+            // Map repartition source topics
+            for (TopicInfo repartitionTopic : subtopology.repartitionSourceTopics()) {
+                topicToSubtopologyId.put(repartitionTopic.name(), subtopologyId);
+            }
+        }
+        
+        return topicToSubtopologyId;
     }
 
     /**

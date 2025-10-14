@@ -40,6 +40,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.common.utils.Utils.mkEntry;
 import static org.apache.kafka.common.utils.Utils.mkMap;
@@ -346,7 +347,7 @@ public class ShareGroupTest {
     public void testValidateOffsetCommit(short version) {
         ShareGroup shareGroup = createShareGroup("group-foo");
         assertThrows(GroupIdNotFoundException.class, () ->
-            shareGroup.validateOffsetCommit(null, null, -1, false, version));
+            shareGroup.validateOffsetCommit(null, null, -1, false, version, Stream.empty()));
     }
 
     @Test

@@ -55,6 +55,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +65,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasks;
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksPerSubtopology;
@@ -609,78 +611,180 @@ public class StreamsGroupTest {
 
     @ParameterizedTest
     @ApiKeyVersionsSource(apiKey = ApiKeys.TXN_OFFSET_COMMIT)
-    public void testValidateTransactionalOffsetCommit(short version) {
+    public void testValidateTransactionalOffsetCommitWithoutAssignmentEpoch(short version) {
         boolean isTransactional = true;
         StreamsGroup group = createStreamsGroup("group-foo");
 
 
         // Simulate a call from the admin client without member ID and member epoch.
         // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
-        // Create a member.
-        group.updateMember(new StreamsGroupMember.Builder("member-id").setMemberEpoch(0).build());
+        // Create a member without assignment epochs (read from a legacy record).
+        group.updateMember(new StreamsGroupMember.Builder("member-id").setMemberEpoch(0).setAssignmentEpochs(Collections.emptyMap()).build());
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
 
         // The member epoch is stale.
         assertThrows(StaleMemberEpochException.class, () ->
-            group.validateOffsetCommit("member-id", "", 10, isTransactional, version));
+            group.validateOffsetCommit("member-id", "", 10, isTransactional, version, Stream.empty()));
 
         // This should succeed.
-        group.validateOffsetCommit("member-id", "", 0, isTransactional, version);
+        group.validateOffsetCommit("member-id", "", 0, isTransactional, version, Stream.empty());
 
         // This should succeed.
-        group.validateOffsetCommit("", null, -1, isTransactional, version);
+        group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty());
+    }
+
+    @ParameterizedTest
+    @ApiKeyVersionsSource(apiKey = ApiKeys.TXN_OFFSET_COMMIT)
+    public void testValidateTransactionalOffsetCommitWithAssignmentEpoch(short version) {
+        boolean isTransactional = true;
+        StreamsGroup group = createStreamsGroup("group-foo");
+
+        // Simulate a call from the admin client without member ID and member epoch.
+        // This should pass only if the group is empty.
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
+
+        // The member does not exist.
+        assertThrows(UnknownMemberIdException.class, () ->
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
+
+        // Create a member with assignment epochs.
+        // This simulates having partitions assigned at different epochs.
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        Map<Integer, Integer> subtopologyEpochs = new HashMap<>();
+        subtopologyEpochs.put(0, 4);  // partition 0 assigned at epoch 4
+        subtopologyEpochs.put(1, 5);  // partition 1 assigned at epoch 5
+        assignmentEpochs.put("sub-0", subtopologyEpochs);
+        group.updateMember(new StreamsGroupMember.Builder("member-id")
+            .setMemberEpoch(5)
+            .setAssignedTasks(new TasksTuple(Map.of("sub-0", Set.of(0, 1)), Map.of(), Map.of()))
+            .setAssignmentEpochs(assignmentEpochs)
+            .build());
+
+        // A call from the admin client should fail as the group is not empty.
+        assertThrows(UnknownMemberIdException.class, () ->
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
+
+        // The member epoch is stale if it exceeds the current member epoch.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 10, isTransactional, version, Stream.empty()));
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 6, true, version, Stream.empty()));
+
+        // These should succeed - any epoch <= memberEpoch (5) is valid.
+        group.validateOffsetCommit("member-id", "", 3, true, version, Stream.empty());
+        group.validateOffsetCommit("member-id", "", 4, true, version, Stream.empty());
+        group.validateOffsetCommit("member-id", "", 5, true, version, Stream.empty());
+
+        // This should succeed.
+        group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty());
     }
 
     @ParameterizedTest
     @ApiKeyVersionsSource(apiKey = ApiKeys.OFFSET_COMMIT)
-    public void testValidateOffsetCommit(short version) {
+    public void testValidateOffsetCommitWithoutAssignmentEpoch(short version) {
         boolean isTransactional = false;
         StreamsGroup group = createStreamsGroup("group-foo");
 
         // Simulate a call from the admin client without member ID and member epoch.
         // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
         // Create members.
         group.updateMember(
             new StreamsGroupMember
-                .Builder("new-protocol-member-id").setMemberEpoch(0).build()
+                .Builder("new-protocol-member-id").setMemberEpoch(0).setAssignmentEpochs(Collections.emptyMap()).build()
         );
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", null, -1, isTransactional, version));
+            group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty()));
 
         // The member epoch is stale.
         if (version >= 9) {
             assertThrows(StaleMemberEpochException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version, Stream.empty()));
         } else {
             assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version, Stream.empty()));
         }
 
         // This should succeed.
         if (version >= 9) {
-            group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version);
+            group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version, Stream.empty());
         } else {
             assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version, Stream.empty()));
+        }
+    }
+
+    @ParameterizedTest
+    @ApiKeyVersionsSource(apiKey = ApiKeys.OFFSET_COMMIT)
+    public void testValidateOffsetCommitWithAssignmentEpoch(short version) {
+        boolean isTransactional = false;
+        StreamsGroup group = createStreamsGroup("group-foo");
+
+        // Simulate a call from the admin client without member ID and member epoch.
+        // This should pass only if the group is empty.
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
+
+        // The member does not exist.
+        assertThrows(UnknownMemberIdException.class, () ->
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
+
+        // Create member with assignment epochs.
+        // This simulates having partitions assigned at epoch 4, then reconciling to epoch 5.
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        assignmentEpochs.put("sub1", Map.of(0, 4, 1, 5));
+        group.updateMember(
+            new StreamsGroupMember
+                .Builder("new-protocol-member-id")
+                .setMemberEpoch(5)
+                .setPreviousMemberEpoch(4)
+                .setAssignedTasks(new TasksTuple(Map.of("sub1", Set.of(0, 1)), Map.of(), Map.of()))
+                .setAssignmentEpochs(assignmentEpochs)
+                .build()
+        );
+
+        // A call from the admin client should fail as the group is not empty.
+        assertThrows(UnknownMemberIdException.class, () ->
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
+        assertThrows(UnknownMemberIdException.class, () ->
+            group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty()));
+
+        // The member epoch is stale if it exceeds the current member epoch.
+        if (version >= 9) {
+            // memberEpoch must be <= current memberEpoch (5)
+            assertThrows(StaleMemberEpochException.class, () ->
+                group.validateOffsetCommit("new-protocol-member-id", "", 6, isTransactional, version, Stream.empty()));
+        } else {
+            assertThrows(UnsupportedVersionException.class, () ->
+                group.validateOffsetCommit("new-protocol-member-id", "", 6, isTransactional, version, Stream.empty()));
+        }
+
+        // These should succeed.
+        if (version >= 9) {
+            // Any epoch <= memberEpoch should pass
+            group.validateOffsetCommit("new-protocol-member-id", "", 3, isTransactional, version, Stream.empty());
+            group.validateOffsetCommit("new-protocol-member-id", "", 4, isTransactional, version, Stream.empty());
+            group.validateOffsetCommit("new-protocol-member-id", "", 5, isTransactional, version, Stream.empty());
+        } else {
+            assertThrows(UnsupportedVersionException.class, () ->
+                group.validateOffsetCommit("new-protocol-member-id", "", 5, isTransactional, version, Stream.empty()));
         }
     }
 

@@ -3697,10 +3697,12 @@ public class GroupMetadataManager {
             records.add(newStreamsGroupCurrentAssignmentRecord(groupId, updatedMember));
 
             log.info("[GroupId {}][MemberId {}] Member's new assignment state: epoch={}, previousEpoch={}, state={}, "
-                    + "assignedTasks={} and tasksPendingRevocation={}.",
-                groupId, updatedMember.memberId(), updatedMember.memberEpoch(), updatedMember.previousMemberEpoch(), updatedMember.state(),
+                    + "assignedTasks={}, tasksPendingRevocation={} and assignmentEpochs={}.",
+                groupId, updatedMember.memberId(), updatedMember.memberEpoch(), updatedMember.previousMemberEpoch(),
+                updatedMember.state(),
                 updatedMember.assignedTasks().toString(),
-                updatedMember.tasksPendingRevocation().toString());
+                updatedMember.tasksPendingRevocation().toString(),
+                updatedMember.assignmentEpochs().toString());
 
             // Schedule/cancel the rebalance timeout.
             if (updatedMember.state() == org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS) {
@@ -5679,6 +5681,7 @@ public class GroupMetadataManager {
             StreamsGroupMember newMember = new StreamsGroupMember.Builder(oldMember)
                 .setMemberEpoch(LEAVE_GROUP_MEMBER_EPOCH)
                 .setPreviousMemberEpoch(LEAVE_GROUP_MEMBER_EPOCH)
+                .setAssignmentEpochs(Collections.emptyMap())
                 .setAssignedTasks(TasksTuple.EMPTY)
                 .setTasksPendingRevocation(TasksTuple.EMPTY)
                 .build();

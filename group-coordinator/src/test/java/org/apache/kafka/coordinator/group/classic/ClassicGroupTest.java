@@ -65,6 +65,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkAssignment;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkTopicAssignment;
@@ -996,7 +997,7 @@ public class ClassicGroupTest {
     @ApiKeyVersionsSource(apiKey = ApiKeys.OFFSET_COMMIT)
     public void testValidateOffsetCommit(short version) {
         // A call from the admin client without any parameters should pass.
-        group.validateOffsetCommit("", "", -1, false, version);
+        group.validateOffsetCommit("", "", -1, false, version, Stream.empty());
 
         // Add a member.
         group.add(new ClassicGroupMember(
@@ -1018,40 +1019,40 @@ public class ClassicGroupTest {
 
         // No parameters and the group is not empty.
         assertThrows(UnknownMemberIdException.class,
-            () -> group.validateOffsetCommit("", "", -1, false, version));
+            () -> group.validateOffsetCommit("", "", -1, false, version, Stream.empty()));
 
         // A transactional offset commit without any parameters
         // and a non-empty group is accepted.
-        group.validateOffsetCommit("", null, -1, true, version);
+        group.validateOffsetCommit("", null, -1, true, version, Stream.empty());
 
         // The member id does not exist.
         assertThrows(UnknownMemberIdException.class,
-            () -> group.validateOffsetCommit("unknown", "unknown", -1, false, version));
+            () -> group.validateOffsetCommit("unknown", "unknown", -1, false, version, Stream.empty()));
 
         // The instance id does not exist.
         assertThrows(UnknownMemberIdException.class,
-            () -> group.validateOffsetCommit("member-id", "unknown", -1, false, version));
+            () -> group.validateOffsetCommit("member-id", "unknown", -1, false, version, Stream.empty()));
 
         // The generation id is invalid.
         assertThrows(IllegalGenerationException.class,
-            () -> group.validateOffsetCommit("member-id", "instance-id", 0, false, version));
+            () -> group.validateOffsetCommit("member-id", "instance-id", 0, false, version, Stream.empty()));
 
         // Group is in prepare rebalance state.
         assertThrows(RebalanceInProgressException.class,
-            () -> group.validateOffsetCommit("member-id", "instance-id", 1, false, version));
+            () -> group.validateOffsetCommit("member-id", "instance-id", 1, false, version, Stream.empty()));
 
         // Group transitions to stable.
         group.transitionTo(STABLE);
 
         // This should work.
-        group.validateOffsetCommit("member-id", "instance-id", 1, false, version);
+        group.validateOffsetCommit("member-id", "instance-id", 1, false, version, Stream.empty());
 
         // Replace static member.
         group.replaceStaticMember("instance-id", "member-id", "new-member-id");
 
         // The old instance id should be fenced.
         assertThrows(FencedInstanceIdException.class,
-            () -> group.validateOffsetCommit("member-id", "instance-id", 1, false, version));
+            () -> group.validateOffsetCommit("member-id", "instance-id", 1, false, version, Stream.empty()));
 
         // Remove member and transitions to dead.
         group.remove("new-instance-id");
@@ -1059,7 +1060,7 @@ public class ClassicGroupTest {
 
         // This should fail with CoordinatorNotAvailableException.
         assertThrows(CoordinatorNotAvailableException.class,
-            () -> group.validateOffsetCommit("member-id", "new-instance-id", 1, false, version));
+            () -> group.validateOffsetCommit("member-id", "new-instance-id", 1, false, version, Stream.empty()));
     }
 
     @Test
