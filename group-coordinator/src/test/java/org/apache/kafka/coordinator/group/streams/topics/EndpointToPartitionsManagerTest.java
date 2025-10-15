@@ -24,6 +24,7 @@ import org.apache.kafka.coordinator.common.runtime.MetadataImageBuilder;
 import org.apache.kafka.coordinator.group.streams.StreamsGroup;
 import org.apache.kafka.coordinator.group.streams.StreamsGroupMember;
 import org.apache.kafka.coordinator.group.streams.TasksTuple;
+import org.apache.kafka.coordinator.group.streams.TasksTupleWithEpochs;
 import org.apache.kafka.image.MetadataImage;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -89,7 +90,7 @@ class EndpointToPartitionsManagerTest {
         activeTasks.put("0", Set.of(0, 1, 2));
         standbyTasks.put("1", Set.of(0, 1, 2));
         tasksTuple = new TasksTuple(activeTasks, standbyTasks, Collections.emptyMap());
-        when(streamsGroupMember.assignedTasks()).thenReturn(tasksTuple);
+        when(streamsGroupMember.assignedTasks()).thenReturn(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(tasksTuple, 0));
         //when(streamsGroupMember.assignedTasks().standbyTasks()).thenReturn(tasksTuple.standbyTasks());
         when(streamsGroup.configuredTopology()).thenReturn(Optional.of(configuredTopology));
         SortedMap<String, ConfiguredSubtopology> configuredSubtopologyMap = new TreeMap<>();
@@ -132,7 +133,7 @@ class EndpointToPartitionsManagerTest {
         configuredSubtopologyOne = new ConfiguredSubtopology(Math.max(topicAPartitions, topicBPartitions), Set.of("Topic-A", "Topic-B"), new HashMap<>(), new HashSet<>(), new HashMap<>());
 
         activeTasks.put("0", Set.of(0, 1, 2, 3, 4));
-        when(streamsGroupMember.assignedTasks()).thenReturn(new TasksTuple(activeTasks, Collections.emptyMap(), Collections.emptyMap()));
+        when(streamsGroupMember.assignedTasks()).thenReturn(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(new TasksTuple(activeTasks, Collections.emptyMap(), Collections.emptyMap()), 0));
         when(streamsGroup.configuredTopology()).thenReturn(Optional.of(configuredTopology));
         SortedMap<String, ConfiguredSubtopology> configuredSubtopologyOneMap = new TreeMap<>();
         configuredSubtopologyOneMap.put("0", configuredSubtopologyOne);

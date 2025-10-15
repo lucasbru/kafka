@@ -17,6 +17,7 @@
 package org.apache.kafka.coordinator.group;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.coordinator.common.runtime.CoordinatorRecord;
 
@@ -28,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Interface common for all groups.
@@ -111,14 +113,15 @@ public interface Group {
      *                                  for consumer groups.
      * @param isTransactional           Whether the offset commit is transactional or not.
      * @param apiVersion                The api version.
+     * @param topicIdPartitions         Stream of topic-partition pairs being committed.
      */
     void validateOffsetCommit(
         String memberId,
         String groupInstanceId,
         int generationIdOrMemberEpoch,
         boolean isTransactional,
-        int apiVersion
-
+        int apiVersion,
+        Stream<TopicIdPartition> topicIdPartitions
     ) throws KafkaException;
 
     /**

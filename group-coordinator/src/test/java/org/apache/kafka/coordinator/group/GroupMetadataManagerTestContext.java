@@ -1790,8 +1790,8 @@ public class GroupMetadataManagerTestContext {
     public static StreamsGroupMember.Builder streamsGroupMemberBuilderWithDefaults(String memberId) {
         return new StreamsGroupMember.Builder(memberId)
             .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
-            .setAssignedTasks(TasksTuple.EMPTY)
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setAssignedTasks(org.apache.kafka.coordinator.group.streams.TasksTupleWithEpochs.fromTasksWithDefaultEpoch(TasksTuple.EMPTY, 0))
+            .setTasksPendingRevocation(org.apache.kafka.coordinator.group.streams.TasksTupleWithEpochs.fromTasksWithDefaultEpoch(TasksTuple.EMPTY, 0))
             .setClientId(DEFAULT_CLIENT_ID)
             .setClientHost(DEFAULT_CLIENT_ADDRESS.toString())
             .setRackId(null)

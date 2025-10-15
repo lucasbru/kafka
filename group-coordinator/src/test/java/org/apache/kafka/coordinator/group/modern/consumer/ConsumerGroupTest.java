@@ -64,6 +64,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.common.utils.Utils.mkEntry;
 import static org.apache.kafka.common.utils.Utils.mkMap;
@@ -833,28 +834,28 @@ public class ConsumerGroupTest {
 
         // Simulate a call from the admin client without member id and member epoch.
         // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
         // Create a member.
         group.updateMember(new ConsumerGroupMember.Builder("member-id").build());
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
 
         // The member epoch is stale.
         assertThrows(StaleMemberEpochException.class, () ->
-            group.validateOffsetCommit("member-id", "", 10, isTransactional, version));
+            group.validateOffsetCommit("member-id", "", 10, isTransactional, version, Stream.empty()));
 
         // This should succeed.
-        group.validateOffsetCommit("member-id", "", 0, isTransactional, version);
+        group.validateOffsetCommit("member-id", "", 0, isTransactional, version, Stream.empty());
 
         // This should succeed.
-        group.validateOffsetCommit("", null, -1, isTransactional, version);
+        group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty());
     }
 
     @ParameterizedTest
@@ -865,11 +866,11 @@ public class ConsumerGroupTest {
 
         // Simulate a call from the admin client without member id and member epoch.
         // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
         // Create members.
         group.updateMember(
@@ -884,27 +885,27 @@ public class ConsumerGroupTest {
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", null, -1, isTransactional, version));
+            group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty()));
 
         // The member epoch is stale.
         if (version >= 9) {
             assertThrows(StaleMemberEpochException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version, Stream.empty()));
         } else {
             assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version, Stream.empty()));
         }
         assertThrows(IllegalGenerationException.class, () ->
-            group.validateOffsetCommit("old-protocol-member-id", "", 10, isTransactional, version));
+            group.validateOffsetCommit("old-protocol-member-id", "", 10, isTransactional, version, Stream.empty()));
 
         // This should succeed.
         if (version >= 9) {
-            group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version);
+            group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version, Stream.empty());
         } else {
             assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version));
+                group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version, Stream.empty()));
         }
     }
 

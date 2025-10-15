@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -383,6 +384,10 @@ class StreamsCoordinatorRecordHelpersTest {
 
     @Test
     public void testNewStreamsGroupCurrentAssignmentRecord() {
+        // Create assignment epochs for active tasks
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        assignmentEpochs.put(SUBTOPOLOGY_1, Map.of(1, 1, 2, 1, 3, 1));
+        
         StreamsGroupMember member = new StreamsGroupMember.Builder(MEMBER_ID)
             .setRackId(RACK_1)
             .setInstanceId(INSTANCE_ID)
@@ -396,27 +401,21 @@ class StreamsCoordinatorRecordHelpersTest {
             .setProcessId(PROCESS_ID)
             .setUserEndpoint(new Endpoint().setHost(USER_ENDPOINT).setPort(USER_ENDPOINT_PORT))
             .setClientTags(Map.of(TAG_1, VALUE_1, TAG_2, VALUE_2))
-            .setAssignedTasks(new TasksTuple(
-                Map.of(
-                    SUBTOPOLOGY_1, Set.of(1, 2, 3)
+            .setAssignedTasks(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(
+                new TasksTuple(
+                    Map.of(SUBTOPOLOGY_1, Set.of(1, 2, 3)),
+                    Map.of(SUBTOPOLOGY_2, Set.of(4, 5, 6)),
+                    Map.of(SUBTOPOLOGY_3, Set.of(7, 8, 9))
                 ),
-                Map.of(
-                    SUBTOPOLOGY_2, Set.of(4, 5, 6)
-                ),
-                Map.of(
-                    SUBTOPOLOGY_3, Set.of(7, 8, 9)
-                )
+                1
             ))
-            .setTasksPendingRevocation(new TasksTuple(
-                Map.of(
-                    SUBTOPOLOGY_1, Set.of(1, 2, 3)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(
+                new TasksTuple(
+                    Map.of(SUBTOPOLOGY_1, Set.of(1, 2, 3)),
+                    Map.of(SUBTOPOLOGY_2, Set.of(4, 5, 6)),
+                    Map.of(SUBTOPOLOGY_3, Set.of(7, 8, 9))
                 ),
-                Map.of(
-                    SUBTOPOLOGY_2, Set.of(4, 5, 6)
-                ),
-                Map.of(
-                    SUBTOPOLOGY_3, Set.of(7, 8, 9)
-                )
+                1
             ))
             .build();
 
@@ -433,6 +432,7 @@ class StreamsCoordinatorRecordHelpersTest {
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
                             .setSubtopologyId(SUBTOPOLOGY_1)
                             .setPartitions(List.of(1, 2, 3))
+                            .setAssignmentEpochs(List.of(1, 1, 1))
                     ))
                     .setStandbyTasks(List.of(
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
@@ -448,6 +448,7 @@ class StreamsCoordinatorRecordHelpersTest {
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
                             .setSubtopologyId(SUBTOPOLOGY_1)
                             .setPartitions(List.of(1, 2, 3))
+                            .setAssignmentEpochs(List.of(1, 1, 1))
                     ))
                     .setStandbyTasksPendingRevocation(List.of(
                         new StreamsGroupCurrentMemberAssignmentValue.TaskIds()
@@ -481,8 +482,8 @@ class StreamsCoordinatorRecordHelpersTest {
             .setProcessId(PROCESS_ID)
             .setUserEndpoint(new Endpoint().setHost(USER_ENDPOINT).setPort(USER_ENDPOINT_PORT))
             .setClientTags(Map.of(TAG_1, VALUE_1, TAG_2, VALUE_2))
-            .setAssignedTasks(new TasksTuple(Map.of(), Map.of(), Map.of()))
-            .setTasksPendingRevocation(new TasksTuple(Map.of(), Map.of(), Map.of()))
+            .setAssignedTasks(new TasksTupleWithEpochs(Map.of(), Map.of(), Map.of()))
+            .setTasksPendingRevocation(new TasksTupleWithEpochs(Map.of(), Map.of(), Map.of()))
             .build();
 
         CoordinatorRecord expectedRecord = CoordinatorRecord.record(

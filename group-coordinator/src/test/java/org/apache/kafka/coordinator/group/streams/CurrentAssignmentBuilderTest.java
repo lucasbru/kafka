@@ -24,10 +24,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.Map;
 import java.util.Set;
 
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasks;
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksTuple;
+import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksTupleWithEpochs;
+import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksWithEpoch;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -50,11 +53,12 @@ public class CurrentAssignmentBuilderTest {
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
                 .setAssignedTasks(
-                    mkTasksTuple(
+                    mkTasksTupleWithEpochs(
                         taskRole,
+                        memberEpoch,
                         mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                         mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -73,11 +77,12 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(
+                .setAssignedTasks(mkTasksTupleWithEpochs(
                     taskRole,
+                    memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -95,11 +100,12 @@ public class CurrentAssignmentBuilderTest {
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
                 .setAssignedTasks(
-                    mkTasksTuple(
+                    mkTasksTupleWithEpochs(
                         taskRole,
+                        memberEpoch,
                         mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                         mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -118,11 +124,12 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(
+                .setAssignedTasks(mkTasksTupleWithEpochs(
                     taskRole,
+                    memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -138,10 +145,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
-                mkTasks(SUBTOPOLOGY_ID1, 1, 2),
-                mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole,
+                mkTasksWithEpoch(SUBTOPOLOGY_ID1, Map.of(1, 9, 2, 8)),
+                mkTasksWithEpoch(SUBTOPOLOGY_ID2, Map.of(3, 9, 4, 8))))
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -160,10 +167,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
-                    mkTasks(SUBTOPOLOGY_ID1, 1, 2, 4),
-                    mkTasks(SUBTOPOLOGY_ID2, 3, 4, 7)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole,
+                    mkTasksWithEpoch(SUBTOPOLOGY_ID1,  Map.of(1, 9, 2, 8, 4, memberEpoch + 1)),
+                    mkTasksWithEpoch(SUBTOPOLOGY_ID2, Map.of(3, 9, 4, 8, 7, memberEpoch + 1))))
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -179,10 +186,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                 mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -201,10 +208,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 4)))
-                .setTasksPendingRevocation(mkTasksTuple(taskRole,
+                .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 1),
                     mkTasks(SUBTOPOLOGY_ID2, 3)))
                 .build(),
@@ -224,11 +231,12 @@ public class CurrentAssignmentBuilderTest {
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
                 .setAssignedTasks(
-                    mkTasksTuple(
+                    mkTasksTupleWithEpochs(
                         taskRole,
+                        memberEpoch,
                         mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                         mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -245,10 +253,11 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(TasksTuple.EMPTY)
+                .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
                 .setTasksPendingRevocation(
-                    mkTasksTuple(
+                    mkTasksTupleWithEpochs(
                         taskRole,
+                        memberEpoch,
                         mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                         mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
                 .build(),
@@ -266,10 +275,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                 mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -288,10 +297,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -307,10 +316,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                 mkTasks(SUBTOPOLOGY_ID2, 3, 4)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -332,10 +341,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 3)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -351,10 +360,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(taskRole,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1),
                 mkTasks(SUBTOPOLOGY_ID2, 4)))
             .build();
@@ -378,10 +387,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -397,10 +406,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(taskRole,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1),
                 mkTasks(SUBTOPOLOGY_ID2, 4)))
             .build();
@@ -452,10 +461,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(taskRole,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1),
                 mkTasks(SUBTOPOLOGY_ID2, 4)))
             .build();
@@ -476,10 +485,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 6)))
-                .setTasksPendingRevocation(mkTasksTuple(taskRole,
+                .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 5)))
                 .build(),
@@ -497,10 +506,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch - 1)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(taskRole,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 1),
                 mkTasks(SUBTOPOLOGY_ID2, 4)))
             .build();
@@ -525,10 +534,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -544,10 +553,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId("process1")
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -567,10 +576,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId("process1")
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -586,10 +595,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId("process1")
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -608,10 +617,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId("process1")
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2, 3, 4),
                     mkTasks(SUBTOPOLOGY_ID2, 5, 6, 7)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
@@ -627,10 +636,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -658,10 +667,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -692,9 +701,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(mkTasksTupleWithEpochs(TaskRole.ACTIVE, memberEpoch, 
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember expectedMember = new StreamsGroupMember.Builder(MEMBER_NAME)
@@ -702,10 +712,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId(PROCESS_ID)
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(mkTasksTupleWithEpochs(TaskRole.ACTIVE, memberEpoch, 
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6, 7)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         StreamsGroupMember updatedMember = new CurrentAssignmentBuilder(member)
@@ -734,10 +744,10 @@ public class CurrentAssignmentBuilderTest {
             .setProcessId("process1")
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 5, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(TaskRole.ACTIVE,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 4),
                 mkTasks(SUBTOPOLOGY_ID2, 7)))
             .build();
@@ -758,10 +768,10 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId("process1")
                 .setMemberEpoch(memberEpoch)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 6)))
-                .setTasksPendingRevocation(mkTasksTuple(taskRole,
+                .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 2),
                     mkTasks(SUBTOPOLOGY_ID2, 5)))
                 .build(),
@@ -779,10 +789,10 @@ public class CurrentAssignmentBuilderTest {
             .setMemberEpoch(memberEpoch)
             .setPreviousMemberEpoch(memberEpoch)
             .setProcessId(PROCESS_ID)
-            .setAssignedTasks(mkTasksTuple(taskRole,
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 3),
                 mkTasks(SUBTOPOLOGY_ID2, 6)))
-            .setTasksPendingRevocation(mkTasksTuple(taskRole,
+            .setTasksPendingRevocation(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                 mkTasks(SUBTOPOLOGY_ID1, 2),
                 mkTasks(SUBTOPOLOGY_ID2, 5)))
             .build();
@@ -814,12 +824,13 @@ public class CurrentAssignmentBuilderTest {
                 .setProcessId(PROCESS_ID)
                 .setMemberEpoch(memberEpoch + 1)
                 .setPreviousMemberEpoch(memberEpoch)
-                .setAssignedTasks(mkTasksTuple(taskRole,
+                .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, memberEpoch,
                     mkTasks(SUBTOPOLOGY_ID1, 3),
                     mkTasks(SUBTOPOLOGY_ID2, 6)))
-                .setTasksPendingRevocation(TasksTuple.EMPTY)
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                 .build(),
             updatedMember
         );
     }
+
 }

@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.group.streams;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.StaleMemberEpochException;
 import org.apache.kafka.common.errors.UnknownMemberIdException;
@@ -31,6 +32,8 @@ import org.apache.kafka.coordinator.group.Group;
 import org.apache.kafka.coordinator.group.OffsetExpirationCondition;
 import org.apache.kafka.coordinator.group.OffsetExpirationConditionImpl;
 import org.apache.kafka.coordinator.group.Utils;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyValue.Subtopology;
+import org.apache.kafka.coordinator.group.generated.StreamsGroupTopologyValue.TopicInfo;
 import org.apache.kafka.coordinator.group.streams.topics.ConfiguredSubtopology;
 import org.apache.kafka.coordinator.group.streams.topics.ConfiguredTopology;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -51,6 +54,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.streams.StreamsGroup.StreamsGroupState.ASSIGNING;
 import static org.apache.kafka.coordinator.group.streams.StreamsGroup.StreamsGroupState.DEAD;
@@ -672,6 +676,7 @@ public class StreamsGroup implements Group {
      * @param memberEpoch       The member epoch.
      * @param isTransactional   Whether the offset commit is transactional or not.
      * @param apiVersion        The api version.
+     * @param topicIdPartitions Stream of topic-partition pairs being committed.
      * @throws UnknownMemberIdException  If the member is not found.
      * @throws StaleMemberEpochException If the provided member epoch doesn't match the actual member epoch.
      */
@@ -681,7 +686,8 @@ public class StreamsGroup implements Group {
         String groupInstanceId,
         int memberEpoch,
         boolean isTransactional,
-        int apiVersion
+        int apiVersion,
+        Stream<TopicIdPartition> topicIdPartitions
     ) throws UnknownMemberIdException, StaleMemberEpochException {
         // When the member epoch is -1, the request comes from either the admin client
         // or a consumer which does not use the group management facility. In this case,
@@ -703,7 +709,112 @@ public class StreamsGroup implements Group {
                 "by members using the streams group protocol");
         }
 
-        validateMemberEpoch(memberEpoch, member.memberEpoch());
+        validateMemberEpoch(member, memberEpoch, topicIdPartitions);
+    }
+
+    /**
+     * Validates that assignment epochs for all committed partitions are less than or equal to the member epoch.
+     * This ensures that zombie members cannot commit offsets for partitions they no longer own.
+     *
+     * @param member            The member committing offsets.
+     * @param memberEpoch       The member epoch provided in the request.
+     * @param topicIdPartitions Stream of topic-partition pairs being committed.
+     * @throws StaleMemberEpochException If any partition has an assignment epoch greater than the member epoch.
+     */
+    private void validateMemberEpoch(
+        StreamsGroupMember member,
+        int memberEpoch,
+        Stream<TopicIdPartition> topicIdPartitions
+    ) throws StaleMemberEpochException {
+
+        // Return early if the member epoch matches
+        if (memberEpoch == member.memberEpoch()) {
+            return;
+        }
+
+        // Validate that the member epoch does not exceed the current member epoch
+        if (memberEpoch > member.memberEpoch()) {
+            throw new StaleMemberEpochException(String.format("The received member epoch %d does not match "
+                + "the expected member epoch %d.", memberEpoch, member.memberEpoch()));
+        }
+
+        // Perform per-partition validation if topology is available
+        Optional<StreamsTopology> maybeTopology = topology.get();
+        if (maybeTopology.isEmpty()) {
+            // Fall back to global validation when topology is not available
+            validateMemberEpoch(memberEpoch, member.memberEpoch());
+            return;
+        }
+
+        validateAssignmentEpochs(
+            member,
+            memberEpoch,
+            maybeTopology.get(),
+            topicIdPartitions
+        );
+    }
+
+    /**
+     * Validates each partition's assignment epoch against the member epoch.
+     */
+    private void validateAssignmentEpochs(
+        StreamsGroupMember member,
+        int memberEpoch,
+        StreamsTopology topology,
+        Stream<TopicIdPartition> topicIdPartitions
+    ) throws StaleMemberEpochException {
+        Map<String, String> topicToSubtopologyId = buildTopicToSubtopologyMap(topology);
+        
+        // Validate each partition's assignment epoch
+        topicIdPartitions.forEach(topicIdPartition -> {
+            String topicName = topicIdPartition.topic();
+            int partition = topicIdPartition.partition();
+            
+            // Find the subtopology for this topic
+            String subtopologyId = topicToSubtopologyId.get(topicName);
+            if (subtopologyId != null) {
+                // Look up the partition in the member's assigned or pending revocation active tasks
+                Map<Integer, Integer> assigned = member.assignedTasks().activeTasksWithEpochs().getOrDefault(subtopologyId, Map.of());
+                Map<Integer, Integer> pending = member.tasksPendingRevocation().activeTasksWithEpochs().getOrDefault(subtopologyId, Map.of());
+
+                Integer assignmentEpoch = assigned.get(partition);
+                if (assignmentEpoch == null) {
+                    assignmentEpoch = pending.get(partition);
+                }
+
+                if (assignmentEpoch != null && assignmentEpoch > memberEpoch) {
+                    throw new StaleMemberEpochException(String.format(
+                        "Cannot commit offset for partition %s-%d with assignment epoch %d using member epoch %d. " +
+                        "The assignment epoch must be less than or equal to the member epoch.",
+                        topicName, partition, assignmentEpoch, memberEpoch));
+                }
+            }
+        });
+    }
+
+    /**
+     * Builds a map from topic name to subtopology ID for quick lookup.
+     */
+    private Map<String, String> buildTopicToSubtopologyMap(StreamsTopology topology) {
+        Map<String, String> topicToSubtopologyId = new HashMap<>();
+        Map<String, Subtopology> subtopologies = topology.subtopologies();
+        
+        for (Map.Entry<String, Subtopology> entry : subtopologies.entrySet()) {
+            String subtopologyId = entry.getKey();
+            Subtopology subtopology = entry.getValue();
+            
+            // Map source topics
+            for (String sourceTopic : subtopology.sourceTopics()) {
+                topicToSubtopologyId.put(sourceTopic, subtopologyId);
+            }
+            
+            // Map repartition source topics
+            for (TopicInfo repartitionTopic : subtopology.repartitionSourceTopics()) {
+                topicToSubtopologyId.put(repartitionTopic.name(), subtopologyId);
+            }
+        }
+        
+        return topicToSubtopologyId;
     }
 
     /**
@@ -887,11 +998,11 @@ public class StreamsGroup implements Group {
     }
 
     void removeTaskProcessIds(
-        TasksTuple tasks,
+        TasksTupleWithEpochs tasks,
         String processId
     ) {
         if (tasks != null) {
-            removeTaskProcessIds(tasks.activeTasks(), currentActiveTaskToProcessId, processId);
+            removeTaskProcessIds(tasks.activeTasksWithEpochs(), currentActiveTaskToProcessId, processId);
             removeTaskProcessIdsFromSet(tasks.standbyTasks(), currentStandbyTaskToProcessIds, processId);
             removeTaskProcessIdsFromSet(tasks.warmupTasks(), currentWarmupTaskToProcessIds, processId);
         }
@@ -905,14 +1016,14 @@ public class StreamsGroup implements Group {
      * @throws IllegalStateException if the process ID does not match the expected one. package-private for testing.
      */
     private void removeTaskProcessIds(
-        Map<String, Set<Integer>> assignment,
+        Map<String, Map<Integer, Integer>> assignment,
         TimelineHashMap<String, TimelineHashMap<Integer, String>> currentTasksProcessId,
         String expectedProcessId
     ) {
         assignment.forEach((subtopologyId, assignedPartitions) -> {
             currentTasksProcessId.compute(subtopologyId, (__, partitionsOrNull) -> {
                 if (partitionsOrNull != null) {
-                    assignedPartitions.forEach(partitionId -> {
+                    assignedPartitions.keySet().forEach(partitionId -> {
                         String prevValue = partitionsOrNull.remove(partitionId);
                         if (!Objects.equals(prevValue, expectedProcessId)) {
                             throw new IllegalStateException(
@@ -978,27 +1089,27 @@ public class StreamsGroup implements Group {
      * @throws IllegalStateException if the partition already has an epoch assigned. package-private for testing.
      */
     void addTaskProcessId(
-        TasksTuple tasks,
+        TasksTupleWithEpochs tasks,
         String processId
     ) {
         if (tasks != null && processId != null) {
-            addTaskProcessId(tasks.activeTasks(), processId, currentActiveTaskToProcessId);
+            addTaskProcessIdFromActiveTasksWithEpochs(tasks.activeTasksWithEpochs(), processId, currentActiveTaskToProcessId);
             addTaskProcessIdToSet(tasks.standbyTasks(), processId, currentStandbyTaskToProcessIds);
             addTaskProcessIdToSet(tasks.warmupTasks(), processId, currentWarmupTaskToProcessIds);
         }
     }
 
-    private void addTaskProcessId(
-        Map<String, Set<Integer>> tasks,
+    private void addTaskProcessIdFromActiveTasksWithEpochs(
+        Map<String, Map<Integer, Integer>> tasksWithEpochs,
         String processId,
         TimelineHashMap<String, TimelineHashMap<Integer, String>> currentTaskProcessId
     ) {
-        tasks.forEach((subtopologyId, assignedTaskPartitions) -> {
+        tasksWithEpochs.forEach((subtopologyId, assignedTaskPartitionsWithEpochs) -> {
             currentTaskProcessId.compute(subtopologyId, (__, partitionsOrNull) -> {
                 if (partitionsOrNull == null) {
-                    partitionsOrNull = new TimelineHashMap<>(snapshotRegistry, assignedTaskPartitions.size());
+                    partitionsOrNull = new TimelineHashMap<>(snapshotRegistry, assignedTaskPartitionsWithEpochs.size());
                 }
-                for (Integer partitionId : assignedTaskPartitions) {
+                for (Integer partitionId : assignedTaskPartitionsWithEpochs.keySet()) {
                     String prevValue = partitionsOrNull.put(partitionId, processId);
                     if (prevValue != null) {
                         throw new IllegalStateException(

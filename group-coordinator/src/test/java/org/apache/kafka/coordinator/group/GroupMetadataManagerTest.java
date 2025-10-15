@@ -137,6 +137,7 @@ import org.apache.kafka.coordinator.group.streams.StreamsTopology;
 import org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil;
 import org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.TaskRole;
 import org.apache.kafka.coordinator.group.streams.TasksTuple;
+import org.apache.kafka.coordinator.group.streams.TasksTupleWithEpochs;
 import org.apache.kafka.coordinator.group.streams.assignor.TaskAssignor;
 import org.apache.kafka.coordinator.group.streams.assignor.TaskAssignorException;
 import org.apache.kafka.coordinator.group.streams.topics.InternalTopicManager;
@@ -4266,15 +4267,13 @@ public class GroupMetadataManagerTest {
                     .setInstanceId(null)
                     .setRebalanceTimeoutMs(100)
                     .setClientTags(new HashMap<>())
-                    .setAssignedTasks(TasksTuple.EMPTY)
-                    .setTasksPendingRevocation(TasksTuple.EMPTY)
                     .setTopologyEpoch(1)
                     .setUserEndpoint(new Endpoint().setHost("localhost").setPort(1500))
                     .setClientId(DEFAULT_CLIENT_ID)
                     .setClientHost(DEFAULT_CLIENT_ADDRESS.toString())
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 9,
                         TaskAssignmentTestUtil.mkTasks(fooTopicName, 0, 1, 2)))
-                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 9,
                         TaskAssignmentTestUtil.mkTasks(fooTopicName, 3, 4, 5)))
                     .build())
                 .withMember(new StreamsGroupMember.Builder("foo-2")
@@ -4284,8 +4283,8 @@ public class GroupMetadataManagerTest {
                     .setProcessId("process-id")
                     .setRackId(null)
                     .setInstanceId(null)
-                    .setAssignedTasks(TasksTuple.EMPTY)
-                    .setTasksPendingRevocation(TasksTuple.EMPTY)
+                    .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+                    .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
                     .setRebalanceTimeoutMs(100)
                     .setClientTags(new HashMap<>())
                     .setTopologyEpoch(1)
@@ -4486,8 +4485,8 @@ public class GroupMetadataManagerTest {
             .setRackId(null)
             .setInstanceId(null)
             .setRebalanceTimeoutMs(1500)
-            .setAssignedTasks(TasksTuple.EMPTY)
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .setTopologyEpoch(0)
             .setClientTags(Map.of())
             .setClientId(DEFAULT_CLIENT_ID)
@@ -16030,7 +16029,7 @@ public class GroupMetadataManagerTest {
         StreamsGroupMember member = streamsGroupMemberBuilderWithDefaults(memberId)
             .setMemberEpoch(100)
             .setPreviousMemberEpoch(99)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 100, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
             .build();
 
         context.replay(StreamsCoordinatorRecordHelpers.newStreamsGroupMemberRecord(groupId, member));
@@ -16120,7 +16119,7 @@ public class GroupMetadataManagerTest {
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2)))
                     .build())
                 .withTopology(StreamsTopology.fromHeartbeatRequest(topology))
@@ -16275,9 +16274,10 @@ public class GroupMetadataManagerTest {
             .setClientId(DEFAULT_CLIENT_ID)
             .setClientHost(DEFAULT_CLIENT_ADDRESS.toString())
             .setRebalanceTimeoutMs(1500)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 1,
                 TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5),
                 TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1, 2)))
+            
             .build();
 
         List<CoordinatorRecord> expectedRecords = List.of(
@@ -16665,14 +16665,14 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2)))
                     .build())
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId2)
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 3, 4, 5)))
                     .build())
                 .withTargetAssignment(memberId1, TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
@@ -16860,7 +16860,7 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5)))
                     .build())
                 .withTargetAssignment(memberId, TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
@@ -16908,7 +16908,7 @@ public class GroupMetadataManagerTest {
             .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(10)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11,
                 TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5),
                 TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1, 2)))
             .setProcessId("process-id2")
@@ -16968,7 +16968,7 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5)))
                     .build())
                 .withTargetAssignment(memberId, TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
@@ -17015,7 +17015,7 @@ public class GroupMetadataManagerTest {
             .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(10)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11,
                 TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5),
                 TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1, 2)))
             .setProcessId("process-id2")
@@ -17072,14 +17072,14 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.STABLE)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1)))
                     .build())
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId2)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 3, 4, 5),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 2)))
                     .build())
@@ -17164,14 +17164,14 @@ public class GroupMetadataManagerTest {
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId1)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1)))
                     .build())
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId2)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 3, 4, 5),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 2)))
                     .build())
@@ -17314,14 +17314,14 @@ public class GroupMetadataManagerTest {
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId1)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 0, 1)))
                     .build())
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId2)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(9)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 3, 4, 5),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 2)))
                     .build())
@@ -17434,10 +17434,10 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 0)))
-                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 2),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 1)))
                     .build())),
@@ -17480,10 +17480,12 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNREVOKED_TASKS)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 3),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 2)))
-                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setTasksPendingRevocation(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 4, 5)))
                     .build())),
             result.records()
@@ -17553,9 +17555,11 @@ public class GroupMetadataManagerTest {
                 StreamsCoordinatorRecordHelpers.newStreamsGroupCurrentAssignmentRecord(groupId, streamsGroupMemberBuilderWithDefaults(memberId1)
                     .setMemberEpoch(11)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        11,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 0)))
+ // Assignment epoch was bumped, since we transitioned to a new epoch after revoking tasks.
                     .build())),
             result.records()
         );
@@ -17610,7 +17614,8 @@ public class GroupMetadataManagerTest {
                     .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
                     .setMemberEpoch(11)
                     .setPreviousMemberEpoch(11)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        11,
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 1)))
                     .build())),
             result.records()
@@ -17683,9 +17688,11 @@ public class GroupMetadataManagerTest {
                 StreamsCoordinatorRecordHelpers.newStreamsGroupCurrentAssignmentRecord(groupId, streamsGroupMemberBuilderWithDefaults(memberId2)
                     .setMemberEpoch(11)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        11,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 2, 3),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 2)))
+ // Assignment epoch is preserved
                     .build())),
             result.records()
         );
@@ -17728,9 +17735,11 @@ public class GroupMetadataManagerTest {
                 StreamsCoordinatorRecordHelpers.newStreamsGroupCurrentAssignmentRecord(groupId, streamsGroupMemberBuilderWithDefaults(memberId3)
                     .setMemberEpoch(11)
                     .setPreviousMemberEpoch(11)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        11,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 4, 5),
                         TaskAssignmentTestUtil.mkTasks(subtopology2, 1)))
+ // Nothing was ever revoked from the member
                     .build())),
             result.records()
         );
@@ -17802,7 +17811,7 @@ public class GroupMetadataManagerTest {
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(10)
                 .setAssignedTasks(
-                    TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
+                    TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
                 .build()));
 
         assertEquals(StreamsGroup.StreamsGroupState.RECONCILING, context.streamsGroupState(groupId));
@@ -17812,7 +17821,7 @@ public class GroupMetadataManagerTest {
                 .setMemberEpoch(11)
                 .setPreviousMemberEpoch(10)
                 .setAssignedTasks(
-                    TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
+                    TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11, TaskAssignmentTestUtil.mkTasks(subtopology1, 1, 2, 3)))
                 .build()));
 
         assertEquals(StreamsGroup.StreamsGroupState.STABLE, context.streamsGroupState(groupId));
@@ -17883,7 +17892,7 @@ public class GroupMetadataManagerTest {
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 10,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2)))
                     .build())
                 .withTopology(StreamsTopology.fromHeartbeatRequest(topology))
@@ -17937,7 +17946,7 @@ public class GroupMetadataManagerTest {
         StreamsGroupMember expectedMember = streamsGroupMemberBuilderWithDefaults(memberId)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(10)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11,
                 TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5)))
             .build();
 
@@ -17984,7 +17993,8 @@ public class GroupMetadataManagerTest {
                 .withMember(streamsGroupMemberBuilderWithDefaults(memberId)
                     .setMemberEpoch(10)
                     .setPreviousMemberEpoch(10)
-                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+                    .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE,
+                        11,
                         TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2)))
                     .build())
                 .withTopology(StreamsTopology.fromHeartbeatRequest(topology))
@@ -18058,9 +18068,9 @@ public class GroupMetadataManagerTest {
         StreamsGroupMember expectedMember = streamsGroupMemberBuilderWithDefaults(memberId)
             .setMemberEpoch(11)
             .setPreviousMemberEpoch(10)
-            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTuple(TaskRole.ACTIVE,
+            .setAssignedTasks(TaskAssignmentTestUtil.mkTasksTupleWithEpochs(TaskRole.ACTIVE, 11,
                 TaskAssignmentTestUtil.mkTasks(subtopology1, 0, 1, 2, 3, 4, 5)))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         List<CoordinatorRecord> expectedRecords = List.of(
@@ -18787,8 +18797,8 @@ public class GroupMetadataManagerTest {
             .setRebalanceTimeoutMs(5000)
             .setClientId(DEFAULT_CLIENT_ID)
             .setClientHost(DEFAULT_CLIENT_ADDRESS.toString())
-            .setAssignedTasks(TasksTuple.EMPTY)
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .setRebalanceTimeoutMs(12000)
             .setTopologyEpoch(0)
             .build();
@@ -19611,12 +19621,12 @@ public class GroupMetadataManagerTest {
             .setMemberEpoch(10)
             .setPreviousMemberEpoch(9)
             .setState(org.apache.kafka.coordinator.group.streams.MemberState.UNRELEASED_TASKS)
-            .setAssignedTasks(new TasksTuple(
+            .setAssignedTasks(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(new TasksTuple(
                 TaskAssignmentTestUtil.mkTasksPerSubtopology(TaskAssignmentTestUtil.mkTasks("subtopology-1", 0, 1, 2)),
                 TaskAssignmentTestUtil.mkTasksPerSubtopology(TaskAssignmentTestUtil.mkTasks("subtopology-1", 3, 4, 5)),
                 TaskAssignmentTestUtil.mkTasksPerSubtopology(TaskAssignmentTestUtil.mkTasks("subtopology-1", 6, 7, 8))
-            ))
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            ), 10))
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         // The group and the member are created if they do not exist.
@@ -19657,7 +19667,7 @@ public class GroupMetadataManagerTest {
                 new StreamsGroupBuilder("foo", 10)
                     .withMember(
                         streamsGroupMemberBuilderWithDefaults("m1")
-                            .setAssignedTasks(tasks)
+                            .setAssignedTasks(TasksTupleWithEpochs.fromTasksWithDefaultEpoch(tasks, 1))
                             .build()
                     )
             )
@@ -23954,5 +23964,26 @@ public class GroupMetadataManagerTest {
     ) {
         return responseTopics.stream()
             .collect(Collectors.toMap(DeleteShareGroupOffsetsResponseData.DeleteShareGroupOffsetsResponseTopic::topicId, Function.identity()));
+    }
+
+    /**
+     * Helper method to create assignment epochs map for the given active tasks and epoch.
+     */
+    private static Map<String, Map<Integer, Integer>> mkAssignmentEpochs(
+        int epoch,
+        TasksTuple... tasksTuples
+    ) {
+        Map<String, Map<Integer, Integer>> result = new HashMap<>();
+        for (TasksTuple tasksTuple : tasksTuples) {
+            for (Map.Entry<String, Set<Integer>> entry : tasksTuple.activeTasks().entrySet()) {
+                String subtopologyId = entry.getKey();
+                Set<Integer> partitions = entry.getValue();
+                Map<Integer, Integer> subtopologyEpochs = result.computeIfAbsent(subtopologyId, k -> new HashMap<>());
+                for (Integer partition : partitions) {
+                    subtopologyEpochs.put(partition, epoch);
+                }
+            }
+        }
+        return result;
     }
 }

@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.coordinator.group.streams;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.GroupNotEmptyException;
 import org.apache.kafka.common.errors.StaleMemberEpochException;
@@ -64,10 +65,12 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasks;
 import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksPerSubtopology;
-import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksTuple;
+import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksTupleWithEpochs;
+import static org.apache.kafka.coordinator.group.streams.TaskAssignmentTestUtil.mkTasksWithEpochsPerSubtopology;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -224,15 +227,15 @@ public class StreamsGroupTest {
         member = new StreamsGroupMember.Builder("member")
             .setProcessId("process")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopology, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopology, 1)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 2)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 3))
                 )
             )
             .setTasksPendingRevocation(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(barSubtopology, 4)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(barSubtopology, 4)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 5)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 6))
                 )
@@ -260,15 +263,15 @@ public class StreamsGroupTest {
         member = new StreamsGroupMember.Builder(member)
             .setProcessId("process1")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopology, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopology, 1)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 2)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 3))
                 )
             )
             .setTasksPendingRevocation(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(barSubtopology, 4)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(barSubtopology, 4)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 5)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 6))
                 )
@@ -303,16 +306,10 @@ public class StreamsGroupTest {
 
         member = new StreamsGroupMember.Builder("member")
             .setProcessId("process")
-            .setAssignedTasks(
-                new TasksTuple(
-                    Map.of(),
-                    Map.of(),
-                    Map.of()
-                )
-            )
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
             .setTasksPendingRevocation(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 2)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 3))
                 )
@@ -326,13 +323,13 @@ public class StreamsGroupTest {
         member = new StreamsGroupMember.Builder(member)
             .setProcessId("process1")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 2)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 3))
                 )
             )
-            .setTasksPendingRevocation(TasksTuple.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build();
 
         streamsGroup.updateMember(member);
@@ -348,8 +345,8 @@ public class StreamsGroupTest {
         StreamsGroupMember m1 = new StreamsGroupMember.Builder("m1")
             .setProcessId("process")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                     Map.of(),
                     Map.of()
                 )
@@ -361,8 +358,8 @@ public class StreamsGroupTest {
         StreamsGroupMember m2 = new StreamsGroupMember.Builder("m2")
             .setProcessId("process")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                     Map.of(),
                     Map.of()
                 )
@@ -383,20 +380,20 @@ public class StreamsGroupTest {
 
         // Removing should fail because there is no epoch set.
         assertThrows(IllegalStateException.class, () -> streamsGroup.removeTaskProcessIds(
-            mkTasksTuple(taskRole, mkTasks(fooSubtopologyId, 1)),
+            mkTasksTupleWithEpochs(taskRole, 10, mkTasks(fooSubtopologyId, 1)),
             "process"
         ));
 
         StreamsGroupMember m1 = new StreamsGroupMember.Builder("m1")
             .setProcessId("process")
-            .setAssignedTasks(mkTasksTuple(taskRole, mkTasks(fooSubtopologyId, 1)))
+            .setAssignedTasks(mkTasksTupleWithEpochs(taskRole, 10, mkTasks(fooSubtopologyId, 1)))
             .build();
 
         streamsGroup.updateMember(m1);
 
         // Removing should fail because the expected epoch is incorrect.
         assertThrows(IllegalStateException.class, () -> streamsGroup.removeTaskProcessIds(
-            mkTasksTuple(taskRole, mkTasks(fooSubtopologyId, 1)),
+            mkTasksTupleWithEpochs(taskRole, 10, mkTasks(fooSubtopologyId, 1)),
             "process1"
         ));
     }
@@ -407,8 +404,8 @@ public class StreamsGroupTest {
         StreamsGroup streamsGroup = createStreamsGroup("foo");
 
         streamsGroup.addTaskProcessId(
-            new TasksTuple(
-                mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+            new TasksTupleWithEpochs(
+                mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                 mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 2)),
                 mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 3))
             ),
@@ -418,8 +415,8 @@ public class StreamsGroupTest {
         // Changing the epoch should fail because the owner of the partition
         // should remove it first.
         assertThrows(IllegalStateException.class, () -> streamsGroup.addTaskProcessId(
-            new TasksTuple(
-                mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 1)),
+            new TasksTupleWithEpochs(
+                mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopologyId, 1)),
                 mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 2)),
                 mkTasksPerSubtopology(mkTasks(fooSubtopologyId, 3))
             ),
@@ -439,15 +436,15 @@ public class StreamsGroupTest {
         member = new StreamsGroupMember.Builder("member")
             .setProcessId("process")
             .setAssignedTasks(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(fooSubtopology, 1)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(fooSubtopology, 1)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 2)),
                     mkTasksPerSubtopology(mkTasks(fooSubtopology, 3))
                 )
             )
             .setTasksPendingRevocation(
-                new TasksTuple(
-                    mkTasksPerSubtopology(mkTasks(barSubtopology, 4)),
+                new TasksTupleWithEpochs(
+                    mkTasksWithEpochsPerSubtopology(10, mkTasks(barSubtopology, 4)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 5)),
                     mkTasksPerSubtopology(mkTasks(barSubtopology, 6))
                 )
@@ -612,32 +609,84 @@ public class StreamsGroupTest {
     public void testValidateTransactionalOffsetCommit(short version) {
         boolean isTransactional = true;
         StreamsGroup group = createStreamsGroup("group-foo");
-
+        
+        // Setup topology with subtopology "sub-0" containing source topic "input-topic"
+        Uuid topicId = Uuid.randomUuid();
+        Map<String, StreamsGroupTopologyValue.Subtopology> subtopologies = Map.of(
+            "sub-0", new StreamsGroupTopologyValue.Subtopology()
+                .setSubtopologyId("sub-0")
+                .setSourceTopics(List.of("input-topic"))
+        );
+        group.setTopology(new StreamsTopology(1, subtopologies));
 
         // Simulate a call from the admin client without member ID and member epoch.
         // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
-        // Create a member.
-        group.updateMember(new StreamsGroupMember.Builder("member-id").setMemberEpoch(0).build());
+        // Create a member with assignment epochs.
+        // This simulates having partitions assigned at different epochs.
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        Map<Integer, Integer> subtopologyEpochs = new HashMap<>();
+        subtopologyEpochs.put(0, 4);  // partition 0 assigned at epoch 4
+        subtopologyEpochs.put(1, 5);  // partition 1 assigned at epoch 5
+        assignmentEpochs.put("sub-0", subtopologyEpochs);
+        group.updateMember(new StreamsGroupMember.Builder("member-id")
+            .setMemberEpoch(5)
+            .setAssignedTasks(TasksTupleWithEpochs.fromTasksAndEpochs(
+                new TasksTuple(Map.of("sub-0", Set.of(0, 1)), Map.of(), Map.of()), 
+                assignmentEpochs))
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
+            .build());
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
 
-        // The member epoch is stale.
+        // This should succeed.
+        group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty());
+
+        // This should succeed.
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version, Stream.empty());
+
+        // The member epoch is stale if it exceeds the current member epoch.
         assertThrows(StaleMemberEpochException.class, () ->
-            group.validateOffsetCommit("member-id", "", 10, isTransactional, version));
+            group.validateOffsetCommit("member-id", "", 10, isTransactional, version, Stream.empty()));
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 6, true, version, Stream.empty()));
 
-        // This should succeed.
-        group.validateOffsetCommit("member-id", "", 0, isTransactional, version);
+        // These should succeed - any epoch <= memberEpoch (5) is valid.
+        group.validateOffsetCommit("member-id", "", 3, true, version, Stream.empty());
+        group.validateOffsetCommit("member-id", "", 4, true, version, Stream.empty());
+        group.validateOffsetCommit("member-id", "", 5, true, version, Stream.empty());
 
-        // This should succeed.
-        group.validateOffsetCommit("", null, -1, isTransactional, version);
+        // Partition 0 has assignmentEpoch 4, so committing with memberEpoch 3 should fail.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 3, isTransactional, version,
+                Stream.of(new TopicIdPartition(topicId, 0, "input-topic"))));
+
+        // Partition 0 has assignmentEpoch 4, so committing with memberEpoch 4 should succeed.
+        group.validateOffsetCommit("member-id", "", 4, isTransactional, version,
+            Stream.of(new TopicIdPartition(topicId, 0, "input-topic")));
+
+        // Partition 1 has assignmentEpoch 5, so committing with memberEpoch 4 should fail.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 4, isTransactional, version,
+                Stream.of(new TopicIdPartition(topicId, 1, "input-topic"))));
+
+        // Partition 1 has assignmentEpoch 5, so committing with memberEpoch 5 should succeed.
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version,
+            Stream.of(new TopicIdPartition(topicId, 1, "input-topic")));
+
+        // Both partitions with memberEpoch 5 should succeed.
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version,
+            Stream.of(
+                new TopicIdPartition(topicId, 0, "input-topic"),
+                new TopicIdPartition(topicId, 1, "input-topic")
+            ));
     }
 
     @ParameterizedTest
@@ -645,43 +694,89 @@ public class StreamsGroupTest {
     public void testValidateOffsetCommit(short version) {
         boolean isTransactional = false;
         StreamsGroup group = createStreamsGroup("group-foo");
+        
+        // Setup topology with subtopology "sub-0" containing source topic "input-topic"
+        Uuid topicId = Uuid.randomUuid();
+        Map<String, StreamsGroupTopologyValue.Subtopology> subtopologies = Map.of(
+            "sub-0", new StreamsGroupTopologyValue.Subtopology()
+                .setSubtopologyId("sub-0")
+                .setSourceTopics(List.of("input-topic"))
+        );
+        group.setTopology(new StreamsTopology(1, subtopologies));
 
         // Simulate a call from the admin client without member ID and member epoch.
-        // This should pass only if the group is empty.
-        group.validateOffsetCommit("", "", -1, isTransactional, version);
+        group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty());
 
         // The member does not exist.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("member-id", null, 0, isTransactional, version));
+            group.validateOffsetCommit("member-id", null, 0, isTransactional, version, Stream.empty()));
 
-        // Create members.
+        // Create member with assignment epochs.
+        // This simulates having partitions assigned at epoch 4, then reconciling to epoch 5.
+        Map<String, Map<Integer, Integer>> assignmentEpochs = new HashMap<>();
+        assignmentEpochs.put("sub-0", Map.of(0, 4, 1, 5));
         group.updateMember(
             new StreamsGroupMember
-                .Builder("new-protocol-member-id").setMemberEpoch(0).build()
+                .Builder("member-id")
+                .setMemberEpoch(5)
+                .setPreviousMemberEpoch(4)
+                .setAssignedTasks(TasksTupleWithEpochs.fromTasksAndEpochs(
+                    new TasksTuple(Map.of("sub-0", Set.of(0, 1)), Map.of(), Map.of()), 
+                    assignmentEpochs))
+                .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
+                .build()
         );
 
         // A call from the admin client should fail as the group is not empty.
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", "", -1, isTransactional, version));
+            group.validateOffsetCommit("", "", -1, isTransactional, version, Stream.empty()));
         assertThrows(UnknownMemberIdException.class, () ->
-            group.validateOffsetCommit("", null, -1, isTransactional, version));
+            group.validateOffsetCommit("", null, -1, isTransactional, version, Stream.empty()));
 
         // The member epoch is stale.
-        if (version >= 9) {
-            assertThrows(StaleMemberEpochException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
-        } else {
+        if (version < 9) {
             assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 10, isTransactional, version));
+                group.validateOffsetCommit("member-id", "", 5, isTransactional, version, Stream.empty()));
+            return;
         }
 
         // This should succeed.
-        if (version >= 9) {
-            group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version);
-        } else {
-            assertThrows(UnsupportedVersionException.class, () ->
-                group.validateOffsetCommit("new-protocol-member-id", "", 0, isTransactional, version));
-        }
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version, Stream.empty());
+
+        // The member epoch is stale if it exceeds the current member epoch.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 10, isTransactional, version, Stream.empty()));
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 6, isTransactional, version, Stream.empty()));
+
+        // These should succeed.
+        group.validateOffsetCommit("member-id", "", 3, isTransactional, version, Stream.empty());
+        group.validateOffsetCommit("member-id", "", 4, isTransactional, version, Stream.empty());
+
+        // Partition 0 has assignmentEpoch 4, so committing with memberEpoch 3 should fail.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 3, isTransactional, version,
+                Stream.of(new TopicIdPartition(topicId, 0, "input-topic"))));
+
+        // Partition 0 has assignmentEpoch 4, so committing with memberEpoch 4 should succeed.
+        group.validateOffsetCommit("member-id", "", 4, isTransactional, version,
+            Stream.of(new TopicIdPartition(topicId, 0, "input-topic")));
+
+        // Partition 1 has assignmentEpoch 5, so committing with memberEpoch 4 should fail.
+        assertThrows(StaleMemberEpochException.class, () ->
+            group.validateOffsetCommit("member-id", "", 4, isTransactional, version,
+                Stream.of(new TopicIdPartition(topicId, 1, "input-topic"))));
+
+        // Partition 1 has assignmentEpoch 5, so committing with memberEpoch 5 should succeed.
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version,
+            Stream.of(new TopicIdPartition(topicId, 1, "input-topic")));
+
+        // Both partitions with memberEpoch 5 should succeed.
+        group.validateOffsetCommit("member-id", "", 5, isTransactional, version,
+            Stream.of(
+                new TopicIdPartition(topicId, 0, "input-topic"),
+                new TopicIdPartition(topicId, 1, "input-topic")
+            ));
     }
 
     @Test
@@ -819,8 +914,8 @@ public class StreamsGroupTest {
             .setProcessId("process1")
             .setUserEndpoint(new StreamsGroupMemberMetadataValue.Endpoint().setHost("host1").setPort(9092))
             .setClientTags(Map.of("tag1", "value1"))
-            .setAssignedTasks(new TasksTuple(Map.of(), Map.of(), Map.of()))
-            .setTasksPendingRevocation(new TasksTuple(Map.of(), Map.of(), Map.of()))
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build());
         group.updateMember(new StreamsGroupMember.Builder("member2")
             .setMemberEpoch(1)
@@ -835,8 +930,8 @@ public class StreamsGroupTest {
             .setProcessId("process2")
             .setUserEndpoint(new StreamsGroupMemberMetadataValue.Endpoint().setHost("host2").setPort(9092))
             .setClientTags(Map.of("tag2", "value2"))
-            .setAssignedTasks(new TasksTuple(Map.of(), Map.of(), Map.of()))
-            .setTasksPendingRevocation(new TasksTuple(Map.of(), Map.of(), Map.of()))
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build());
         snapshotRegistry.idempotentCreateSnapshot(1);
 
@@ -1055,8 +1150,8 @@ public class StreamsGroupTest {
             .setProcessId("process1")
             .setUserEndpoint(new StreamsGroupMemberMetadataValue.Endpoint().setHost("host1").setPort(9092))
             .setClientTags(Map.of("tag1", "value1"))
-            .setAssignedTasks(new TasksTuple(Map.of(), Map.of(), Map.of()))
-            .setTasksPendingRevocation(new TasksTuple(Map.of(), Map.of(), Map.of()))
+            .setAssignedTasks(TasksTupleWithEpochs.EMPTY)
+            .setTasksPendingRevocation(TasksTupleWithEpochs.EMPTY)
             .build());
         snapshotRegistry.idempotentCreateSnapshot(1);
 
