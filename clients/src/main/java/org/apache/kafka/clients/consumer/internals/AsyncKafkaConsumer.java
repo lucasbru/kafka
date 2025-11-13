@@ -96,6 +96,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.internals.ClusterResourceListeners;
+import org.apache.kafka.common.message.StreamsGroupHeartbeatResponseData;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.metrics.MetricsReporter;
@@ -330,6 +331,7 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
     private final OffsetCommitCallbackInvoker offsetCommitCallbackInvoker;
     private final ConsumerRebalanceListenerInvoker rebalanceListenerInvoker;
     private final Optional<StreamsRebalanceListenerInvoker> streamsRebalanceListenerInvoker;
+    private final Optional<StreamsRebalanceData> streamsRebalanceData;
     // Last triggered async commit future. Used to wait until all previous async commits are completed.
     // We only need to keep track of the last one, since they are guaranteed to complete in order.
     private CompletableFuture<Map<TopicPartition, OffsetAndMetadata>> lastPendingAsyncCommit = null;
@@ -483,6 +485,7 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
             );
             this.streamsRebalanceListenerInvoker = streamsRebalanceData.map(s ->
                 new StreamsRebalanceListenerInvoker(logContext, s));
+            this.streamsRebalanceData = streamsRebalanceData;
             this.backgroundEventProcessor = new BackgroundEventProcessor();
             this.backgroundEventReaper = backgroundEventReaperFactory.build(logContext);
 
@@ -544,6 +547,7 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
         this.backgroundEventQueue = backgroundEventQueue;
         this.rebalanceListenerInvoker = rebalanceListenerInvoker;
         this.streamsRebalanceListenerInvoker = Optional.empty();
+        this.streamsRebalanceData = Optional.empty();
         this.backgroundEventProcessor = new BackgroundEventProcessor();
         this.backgroundEventReaper = backgroundEventReaper;
         this.metrics = metrics;
@@ -667,6 +671,7 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
                 requestManagersSupplier,
                 asyncConsumerMetrics);
         this.streamsRebalanceListenerInvoker = Optional.empty();
+        this.streamsRebalanceData = Optional.empty();
         this.backgroundEventProcessor = new BackgroundEventProcessor();
         this.backgroundEventReaper = new CompletableEventReaper(logContext);
     }
@@ -1857,6 +1862,64 @@ public class AsyncKafkaConsumer<K, V> implements ConsumerDelegate<K, V> {
     // Visible for testing
     WakeupTrigger wakeupTrigger() {
         return wakeupTrigger;
+    }
+
+    /**
+     * Blocks until the streams group is ready or timeout expires. This method should be called by
+     * StreamThread before polling to ensure the group is ready based on status handler logic.
+     * 
+     * While blocking, this method processes background events (including rebalance callbacks) to ensure
+     * the consumer continues to participate in group coordination.
+     *
+     * @param timeout Maximum time to wait for group to be ready
+     * @param statusHandler Predicate that returns true if group is ready, false if should continue waiting.
+     *                      May throw exceptions to fail immediately (e.g., for incorrectly partitioned topics).
+     * @throws TimeoutException if timeout expires while waiting
+     * @throws WakeupException if {@link #wakeup()} is called
+     * @throws InterruptException if the calling thread is interrupted
+     * @throws IllegalStateException if the consumer has been closed
+     */
+    public void waitForStreamsGroupReady(final Duration timeout, 
+                                         final Predicate<List<StreamsGroupHeartbeatResponseData.Status>> statusHandler) {
+        if (streamsRebalanceData.isEmpty()) {
+            return;
+        }
+
+        acquireAndEnsureOpen();
+        try {
+            StreamsRebalanceData data = streamsRebalanceData.get();
+            Timer timer = time.timer(timeout);
+
+            while (true) {
+                wakeupTrigger.maybeTriggerWakeup();
+
+                if (statusHandler.test(data.statuses())) {
+                    return;
+                }
+
+                if (timer.isExpired()) {
+                    throw new TimeoutException("Timeout expired while waiting for streams group to be ready after " 
+                        + timer.elapsedMs() + "ms");
+                }
+
+                try {
+                    offsetCommitCallbackInvoker.executeCallbacks();
+                    processBackgroundEvents();
+                } catch (WakeupException | InterruptException e) {
+                    throw e;
+                } catch (Throwable t) {
+                    throw ConsumerUtils.maybeWrapAsKafkaException(t);
+                }
+
+                try {
+                    Thread.sleep(Math.min(100, timer.remainingMs()));
+                } catch (InterruptedException e) {
+                    throw new InterruptException(e);
+                }
+            }
+        } finally {
+            release();
+        }
     }
 
     private Fetch<K, V> pollForFetches(Timer timer) {

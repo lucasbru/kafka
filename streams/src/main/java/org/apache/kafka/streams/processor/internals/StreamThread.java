@@ -47,7 +47,6 @@ import org.apache.kafka.common.requests.StreamsGroupHeartbeatResponse;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.common.utils.Timer;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.streams.GroupProtocol;
 import org.apache.kafka.streams.KafkaClientSupplier;
@@ -379,8 +378,6 @@ public class StreamThread extends Thread implements ProcessingThread {
     private volatile KafkaFutureImpl<Uuid> mainConsumerInstanceIdFuture = new KafkaFutureImpl<>();
     private volatile KafkaFutureImpl<Uuid> restoreConsumerInstanceIdFuture = new KafkaFutureImpl<>();
     private volatile KafkaFutureImpl<Uuid> producerInstanceIdFuture = new KafkaFutureImpl<>();
-
-    private Timer topicsReadyTimer;
 
     public static StreamThread create(final TopologyMetadata topologyMetadata,
                                       final StreamsConfig config,
@@ -1204,6 +1201,8 @@ public class StreamThread extends Thread implements ProcessingThread {
         final long startMs = time.milliseconds();
         now = startMs;
 
+        waitForStreamsGroupReadyIfNeeded();
+
         final long pollLatency;
         taskManager.resumePollingForPartitionsWithAvailableSpace();
         pollLatency = pollPhase();
@@ -1355,6 +1354,8 @@ public class StreamThread extends Thread implements ProcessingThread {
     void runOnceWithProcessingThreads() {
         final long startMs = time.milliseconds();
         now = startMs;
+
+        waitForStreamsGroupReadyIfNeeded();
 
         final long pollLatency;
         taskManager.resumePollingForPartitionsWithAvailableSpace();
@@ -1523,6 +1524,45 @@ public class StreamThread extends Thread implements ProcessingThread {
     }
 
     /**
+     * Waits for streams group to be ready by checking status codes. This method blocks until
+     * the group is ready or an error occurs.
+     */
+    private void waitForStreamsGroupReadyIfNeeded() {
+        if (!(mainConsumer instanceof org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer) 
+            || streamsRebalanceData.isEmpty()) {
+            return;
+        }
+
+        final org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer<byte[], byte[]> asyncConsumer = 
+            (org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer<byte[], byte[]>) mainConsumer;
+
+        // Use 2 * heartbeatIntervalMs as the timeout
+        final int heartbeatIntervalMs = streamsRebalanceData.get().heartbeatIntervalMs();
+        final Duration timeout = Duration.ofMillis(2L * heartbeatIntervalMs);
+
+        try {
+            asyncConsumer.waitForStreamsGroupReady(timeout, statuses -> {
+                for (final StreamsGroupHeartbeatResponseData.Status status : statuses) {
+                    if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.INCORRECTLY_PARTITIONED_TOPICS.code()) {
+                        final String errorMsg = status.statusDetail();
+                        log.error(errorMsg);
+                        throw new TopologyException(errorMsg);
+                    } else if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.MISSING_SOURCE_TOPICS.code() ||
+                               status.statusCode() == StreamsGroupHeartbeatResponse.Status.MISSING_INTERNAL_TOPICS.code()) {
+                        // Group is not ready, continue waiting
+                        return false;
+                    }
+                }
+                // Group is ready
+                return true;
+            });
+        } catch (final org.apache.kafka.common.errors.TimeoutException e) {
+            throw new MissingSourceTopicException(
+                "Timeout waiting for source topics to be created after " + timeout.toMillis() + "ms");
+        }
+    }
+
+    /**
      * Get the next batch of records by polling.
      *
      * @param pollTime how long to block in Consumer#poll
@@ -1546,27 +1586,10 @@ public class StreamThread extends Thread implements ProcessingThread {
 
     public void handleStreamsRebalanceData() {
         if (streamsRebalanceData.isPresent()) {
-            boolean hasMissingSourceTopics = false;
-            String missingTopicsDetail = null;
-
             for (final StreamsGroupHeartbeatResponseData.Status status : streamsRebalanceData.get().statuses()) {
                 if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.SHUTDOWN_APPLICATION.code()) {
                     shutdownErrorHook.run();
-                } else if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.MISSING_SOURCE_TOPICS.code()) {
-                    hasMissingSourceTopics = true;
-                    missingTopicsDetail = status.statusDetail();
-                } else if (status.statusCode() == StreamsGroupHeartbeatResponse.Status.INCORRECTLY_PARTITIONED_TOPICS.code()) {
-                    final String errorMsg = status.statusDetail();
-                    log.error(errorMsg);
-                    throw new TopologyException(errorMsg);
                 }
-            }
-
-            if (hasMissingSourceTopics) {
-                handleMissingSourceTopicsWithTimeout(missingTopicsDetail);
-            } else {
-                // Reset timeout tracking when no missing source topics are reported
-                topicsReadyTimer = null;
             }
 
             final Map<StreamsRebalanceData.HostInfo, StreamsRebalanceData.EndpointPartitions> partitionsByEndpoint =
@@ -1585,34 +1608,6 @@ public class StreamThread extends Thread implements ProcessingThread {
             );
         }
     }
-
-    private void handleMissingSourceTopicsWithTimeout(final String missingTopicsDetail) {
-        // Use 2 * heartbeatIntervalMs as the timeout ensures at least one heartbeat is sent before raising the exception
-        final int heartbeatIntervalMs = streamsRebalanceData.get().heartbeatIntervalMs();
-        final long timeoutMs = 2L * heartbeatIntervalMs;
-
-        // Start timeout tracking on first encounter with missing topics
-        if (topicsReadyTimer == null) {
-            topicsReadyTimer = time.timer(timeoutMs);
-            log.info("Missing source topics detected: {}. Will wait up to {}ms before failing.",
-                missingTopicsDetail, timeoutMs);
-        } else {
-            topicsReadyTimer.update();
-        }
-
-        if (topicsReadyTimer.isExpired()) {
-            final long elapsedTime = topicsReadyTimer.elapsedMs();
-            final String errorMsg = String.format("Missing source topics: %s. Timeout exceeded after %dms.",
-                missingTopicsDetail, elapsedTime);
-            log.error(errorMsg);
-
-            throw new MissingSourceTopicException(errorMsg);
-        } else {
-            log.debug("Missing source topics: {}. Elapsed time: {}ms, timeout in: {}ms",
-                missingTopicsDetail, topicsReadyTimer.elapsedMs(), topicsReadyTimer.remainingMs());
-        }
-    }
-
 
     static Map<TopicPartition, PartitionInfo> getTopicPartitionInfo(final Map<HostInfo, Set<TopicPartition>> partitionsByHost) {
         final Map<TopicPartition, PartitionInfo> topicToPartitionInfo = new HashMap<>();

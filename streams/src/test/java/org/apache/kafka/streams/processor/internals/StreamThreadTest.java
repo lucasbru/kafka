@@ -179,6 +179,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atMostOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -3919,10 +3920,12 @@ public class StreamThreadTest {
 
     @Test
     public void testStreamsProtocolRunOnceWithoutProcessingThreadsMissingSourceTopic() {
+        final org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer<byte[], byte[]> asyncConsumer =  
+                mock(org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer.class);
         final ConsumerGroupMetadata consumerGroupMetadata = Mockito.mock(ConsumerGroupMetadata.class);
         when(consumerGroupMetadata.groupInstanceId()).thenReturn(Optional.empty());
-        when(mainConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
-        when(mainConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
+        when(asyncConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
+        when(asyncConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
         final StreamsRebalanceData streamsRebalanceData = new StreamsRebalanceData(
                 UUID.randomUUID(),
                 Optional.empty(),
@@ -3943,7 +3946,7 @@ public class StreamThreadTest {
                 mockTime,
                 config,
                 null,
-                mainConsumer,
+                asyncConsumer,
                 consumer,
                 changelogReader,
                 null,
@@ -3981,17 +3984,23 @@ public class StreamThreadTest {
         // Advance time beyond max.poll.interval.ms (default is 300000ms) to trigger timeout
         mockTime.sleep(10001);
 
+        // Mock waitForStreamsGroupReady to throw TimeoutException after timeout
+        doThrow(new org.apache.kafka.common.errors.TimeoutException(
+                "Timeout expired while waiting for streams group to be ready after 10001ms"))
+                .when(asyncConsumer).waitForStreamsGroupReady(Mockito.any(Duration.class), Mockito.any());
+
         final MissingSourceTopicException exception = assertThrows(MissingSourceTopicException.class, () -> thread.runOnceWithoutProcessingThreads());
-        assertTrue(exception.getMessage().contains("Missing source topics"));
-        assertTrue(exception.getMessage().contains("Timeout exceeded"));
+        assertTrue(exception.getMessage().contains("Timeout waiting for source topics"));
     }
 
     @Test
     public void testStreamsProtocolIncorrectlyPartitionedTopics() {
+        final org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer<byte[], byte[]> asyncConsumer =  
+                mock(org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer.class);
         final ConsumerGroupMetadata consumerGroupMetadata = Mockito.mock(ConsumerGroupMetadata.class);
         when(consumerGroupMetadata.groupInstanceId()).thenReturn(Optional.empty());
-        when(mainConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
-        when(mainConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
+        lenient().when(asyncConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
+        lenient().when(asyncConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
         final StreamsRebalanceData streamsRebalanceData = new StreamsRebalanceData(
                 UUID.randomUUID(),
                 Optional.empty(),
@@ -4012,7 +4021,7 @@ public class StreamThreadTest {
                 mockTime,
                 config,
                 null,
-                mainConsumer,
+                asyncConsumer,
                 consumer,
                 changelogReader,
                 null,
@@ -4040,6 +4049,16 @@ public class StreamThreadTest {
                         .setStatusCode(StreamsGroupHeartbeatResponse.Status.INCORRECTLY_PARTITIONED_TOPICS.code())
                         .setStatusDetail("Topics are incorrectly partitioned")
         ));
+
+        streamsRebalanceData.setHeartbeatIntervalMs(5000);
+
+        // Mock waitForStreamsGroupReady to throw TopologyException immediately
+        doAnswer(invocation -> {
+            final java.util.function.Predicate<List<StreamsGroupHeartbeatResponseData.Status>> statusHandler = 
+                invocation.getArgument(1);
+            statusHandler.test(streamsRebalanceData.statuses());
+            return null;
+        }).when(asyncConsumer).waitForStreamsGroupReady(Mockito.any(Duration.class), Mockito.any());
 
         // Should immediately throw TopologyException (no timeout like MISSING_SOURCE_TOPICS)
         final TopologyException exception = assertThrows(TopologyException.class,
@@ -4108,10 +4127,12 @@ public class StreamThreadTest {
 
     @Test
     public void testStreamsProtocolRunOnceWithProcessingThreadsMissingSourceTopic() {
+        final org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer<byte[], byte[]> asyncConsumer =  
+                mock(org.apache.kafka.clients.consumer.internals.AsyncKafkaConsumer.class);
         final ConsumerGroupMetadata consumerGroupMetadata = Mockito.mock(ConsumerGroupMetadata.class);
         when(consumerGroupMetadata.groupInstanceId()).thenReturn(Optional.empty());
-        when(mainConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
-        when(mainConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
+        when(asyncConsumer.poll(Mockito.any(Duration.class))).thenReturn(new ConsumerRecords<>(Map.of(), Map.of()));
+        when(asyncConsumer.groupMetadata()).thenReturn(consumerGroupMetadata);
         final StreamsRebalanceData streamsRebalanceData = new StreamsRebalanceData(
                 UUID.randomUUID(),
                 Optional.empty(),
@@ -4132,7 +4153,7 @@ public class StreamThreadTest {
                 mockTime,
                 config,
                 null,
-                mainConsumer,
+                asyncConsumer,
                 consumer,
                 changelogReader,
                 null,
@@ -4170,9 +4191,13 @@ public class StreamThreadTest {
         // Advance time beyond 2 * heartbeatIntervalMs (default is 5000ms) to trigger timeout
         mockTime.sleep(10001);
 
+        // Mock waitForStreamsGroupReady to throw TimeoutException after timeout
+        doThrow(new org.apache.kafka.common.errors.TimeoutException(
+                "Timeout expired while waiting for streams group to be ready after 10001ms"))
+                .when(asyncConsumer).waitForStreamsGroupReady(Mockito.any(Duration.class), Mockito.any());
+
         final MissingSourceTopicException exception = assertThrows(MissingSourceTopicException.class, () -> thread.runOnceWithProcessingThreads());
-        assertTrue(exception.getMessage().contains("Missing source topics"));
-        assertTrue(exception.getMessage().contains("Timeout exceeded"));
+        assertTrue(exception.getMessage().contains("Timeout waiting for source topics"));
     }
 
     @Test
