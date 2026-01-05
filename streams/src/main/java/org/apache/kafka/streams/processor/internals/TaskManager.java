@@ -57,7 +57,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -903,6 +902,8 @@ public class TaskManager {
         }
     }
 
+    private Set<Task> referenceToTasks = new HashSet<>();
+
     private void transitRestoredTaskToRunning(final Task task,
                                               final long now,
                                               final java.util.function.Consumer<Set<TopicPartition>> offsetResetter) {
@@ -912,6 +913,7 @@ public class TaskManager {
             mainConsumer.resume(task.inputPartitions());
             task.clearTaskTimeout();
         } catch (final TimeoutException timeoutException) {
+            referenceToTasks.add(task); // prevent task from being GCed before next retry
             task.maybeInitTaskTimeoutOrThrow(now, timeoutException);
             stateUpdater.add(task);
             log.debug(
@@ -1317,6 +1319,7 @@ public class TaskManager {
         while (taskIdIterator.hasNext()) {
             final TaskId id = taskIdIterator.next();
             if (!allTasks.containsKey(id)) {
+                log.warn("Releasing lock on unassigned task directory {} that was not assigned during the rebalance", id);
                 stateDirectory.unlock(id);
                 taskIdIterator.remove();
             }

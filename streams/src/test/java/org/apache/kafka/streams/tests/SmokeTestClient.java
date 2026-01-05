@@ -19,6 +19,7 @@ package org.apache.kafka.streams.tests;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.KafkaThread;
+import org.apache.kafka.streams.KafkaClientSupplier;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -51,6 +52,7 @@ import static org.apache.kafka.streams.kstream.Suppressed.untilWindowCloses;
 public class SmokeTestClient extends SmokeTestUtil {
 
     private final String name;
+    private final KafkaClientSupplier clientSupplier;
 
     private KafkaStreams streams;
     private boolean uncaughtException = false;
@@ -67,7 +69,12 @@ public class SmokeTestClient extends SmokeTestUtil {
     }
 
     public SmokeTestClient(final String name) {
+        this(name, null);
+    }
+
+    public SmokeTestClient(final String name, final KafkaClientSupplier clientSupplier) {
         this.name = name;
+        this.clientSupplier = clientSupplier;
     }
 
     public boolean closed() {
@@ -84,7 +91,11 @@ public class SmokeTestClient extends SmokeTestUtil {
 
     public void start(final Properties streamsProperties) {
         final Topology build = getTopology();
-        streams = new KafkaStreams(build, getStreamsConfig(streamsProperties));
+        if (clientSupplier != null) {
+            streams = new KafkaStreams(build, getStreamsConfig(streamsProperties), clientSupplier);
+        } else {
+            streams = new KafkaStreams(build, getStreamsConfig(streamsProperties));
+        }
 
         final CountDownLatch countDownLatch = new CountDownLatch(1);
         streams.setStateListener((newState, oldState) -> {
@@ -107,7 +118,7 @@ public class SmokeTestClient extends SmokeTestUtil {
             System.out.println(name + ": FATAL: An unexpected exception is encountered on thread " + Thread.currentThread() + ": " + e);
             e.printStackTrace(System.out);
             uncaughtException = true;
-            return StreamsUncaughtExceptionHandler.StreamThreadExceptionResponse.SHUTDOWN_CLIENT;
+            return StreamsUncaughtExceptionHandler.StreamThreadExceptionResponse.REPLACE_THREAD;
         });
 
         addShutdownHook("streams-shutdown-hook", this::close);

@@ -172,7 +172,9 @@ public abstract class AbstractTask implements Task {
                                             final Exception cause) {
         if (deadlineMs == NO_DEADLINE) {
             deadlineMs = currentWallClockMs + config.taskTimeoutMs;
-        } else if (currentWallClockMs > deadlineMs) {
+        }
+
+        if (currentWallClockMs >= deadlineMs) {
             final String errorMessage = String.format(
                 "Task %s did not make progress within %d ms. Adjust `%s` if needed.",
                 id,
