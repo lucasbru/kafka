@@ -231,6 +231,71 @@ public class StreamsGroupTest {
     }
 
     @Test
+    public void testSettledRefinementIsUpToDateUntilARefinerInputChanges() {
+        StreamsGroup streamsGroup = createStreamsGroup("foo");
+        streamsGroup.updateMember(new StreamsGroupMember.Builder("member-id").build());
+        MemberTaskOffsets offsets = new MemberTaskOffsets(Map.of("sub-1", Map.of(0, 10L)), Map.of("sub-1", Map.of(0, 20L)));
+        streamsGroup.updateTaskOffsets("member-id", offsets);
+
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        assertTrue(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        // Another assignment epoch or other warm-up configurations are other inputs.
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(6, 2, 100L));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 3, 100L));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 50L));
+
+        // The same task offsets reported again change nothing, new ones do.
+        streamsGroup.updateTaskOffsets("member-id", offsets);
+        assertTrue(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+        streamsGroup.updateTaskOffsets("member-id",
+            new MemberTaskOffsets(Map.of("sub-1", Map.of(0, 15L)), Map.of("sub-1", Map.of(0, 20L))));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.updateMember(new StreamsGroupMember.Builder("member-id").setMemberEpoch(5).build());
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.updateTargetAssignment("member-id", new TasksTuple(Map.of("sub-1", Set.of(0)), Map.of(), Map.of()));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.removeTargetAssignment("member-id");
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.setTopology(new StreamsTopology(1, Map.of()));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.setConfiguredTopology(
+            new ConfiguredTopology(1, 0, Optional.of(new TreeMap<>()), Map.of(), Optional.empty()));
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        streamsGroup.removeMember("member-id");
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+    }
+
+    @Test
+    public void testSettledRefinementIsNotUpToDateAfterARollback() {
+        SnapshotRegistry snapshotRegistry = new SnapshotRegistry(LOG_CONTEXT);
+        StreamsGroup streamsGroup = new StreamsGroup(LOG_CONTEXT, snapshotRegistry, "foo");
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        snapshotRegistry.idempotentCreateSnapshot(0);
+
+        // A write that changes the group fails after the group was refined again: the rollback restores the group's
+        // state, but not the counter of refiner inputs, so the earlier refinement must not be taken as up to date.
+        streamsGroup.updateMember(new StreamsGroupMember.Builder("member-id").build());
+        streamsGroup.recordSettledRefinement(5, 2, 100L);
+        snapshotRegistry.revertToSnapshot(0);
+
+        assertFalse(streamsGroup.isSettledRefinementUpToDate(5, 2, 100L));
+    }
+
+    @Test
     public void testRemoveMemberClearsTaskOffsets() {
         StreamsGroup streamsGroup = createStreamsGroup("foo");
         streamsGroup.updateMember(new StreamsGroupMember.Builder("member-id").build());

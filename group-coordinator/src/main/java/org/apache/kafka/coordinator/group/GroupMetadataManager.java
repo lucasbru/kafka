@@ -2286,9 +2286,18 @@ public class GroupMetadataManager {
             // intermediate assignment is derived for the whole group, so a step is due if it changes the assignment of
             // any member, not only of the member sending this heartbeat; the other members pick up their slices from
             // the intermediate assignment cached for the new epoch.
-            refinedGroupAssignment = refineAssignment(group, group.targetAssignment(), updatedConfiguredTopology);
-            if (changesAnyMember(group, refinedGroupAssignment)) {
-                assignmentUpdate = AssignmentUpdate.REFINED;
+            // If the group was already refined at this epoch, with nothing the refiner depends on having changed since,
+            // that refinement found no step due, and so would this one; the intermediate assignment it cached for the
+            // epoch is then used below.
+            final int numWarmupReplicas = streamsGroupNumWarmupReplicas(groupId);
+            final long acceptableRecoveryLag = streamsGroupAcceptableRecoveryLag(groupId);
+            if (!group.isSettledRefinementUpToDate(group.assignmentEpoch(), numWarmupReplicas, acceptableRecoveryLag)) {
+                refinedGroupAssignment = refineAssignment(group, group.targetAssignment(), updatedConfiguredTopology);
+                if (changesAnyMember(group, refinedGroupAssignment)) {
+                    assignmentUpdate = AssignmentUpdate.REFINED;
+                } else {
+                    group.recordSettledRefinement(group.assignmentEpoch(), numWarmupReplicas, acceptableRecoveryLag);
+                }
             }
         }
 

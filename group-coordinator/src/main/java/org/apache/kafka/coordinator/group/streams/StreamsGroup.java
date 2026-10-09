@@ -255,6 +255,39 @@ public class StreamsGroup implements Group {
     }
 
     /**
+     * A counter that changes whenever an input of the {@link AssignmentRefiner} changes: a member, its current
+     * assignment or its reported task offsets, the target assignment, or the topology. It only ever grows, and it is
+     * not rolled back with a failed write, so a value observed before a rollback is never observed again afterwards.
+     */
+    private long refinerInputsVersion = 0;
+
+    /**
+     * The inputs of the last refinement of the settled group that found no refinement step due, see
+     * {@link #isSettledRefinementUpToDate}. Kept in a timeline container so that a failed write also rolls back the
+     * claim that the group's state at that time needed no refinement step. Since {@link #refinerInputsVersion} is not
+     * rolled back, a value that still matches after a rollback means that no input of the refiner changed since the
+     * refinement was recorded.
+     */
+    private final TimelineObject<SettledRefinement> settledRefinement;
+
+    /**
+     * The inputs a refinement of the settled group was derived from.
+     *
+     * @param assignmentEpoch       The assignment epoch, or {@code -1} if there was no such refinement yet.
+     * @param refinerInputsVersion  The {@link #refinerInputsVersion} at the time.
+     * @param numWarmupReplicas     The group's {@code num.warmup.replicas} at the time.
+     * @param acceptableRecoveryLag The group's {@code acceptable.recovery.lag} at the time.
+     */
+    private record SettledRefinement(
+        int assignmentEpoch,
+        long refinerInputsVersion,
+        int numWarmupReplicas,
+        long acceptableRecoveryLag
+    ) {
+        private static final SettledRefinement NONE = new SettledRefinement(-1, -1L, -1, -1L);
+    }
+
+    /**
      * The Streams topology.
      */
     private final TimelineObject<Optional<StreamsTopology>> topology;
@@ -330,6 +363,7 @@ public class StreamsGroup implements Group {
         this.currentStandbyTaskToProcessIds = new TimelineHashMap<>(snapshotRegistry, 0);
         this.currentWarmupTaskToProcessIds = new TimelineHashMap<>(snapshotRegistry, 0);
         this.refinedAssignment = new TimelineObject<>(snapshotRegistry, RefinedAssignment.NONE);
+        this.settledRefinement = new TimelineObject<>(snapshotRegistry, SettledRefinement.NONE);
         this.topology = new TimelineObject<>(snapshotRegistry, Optional.empty());
         this.configuredTopology = new TimelineObject<>(snapshotRegistry, Optional.empty());
         this.lastAssignmentConfigs = new TimelineObject<>(snapshotRegistry, AssignmentConfigsImpl.DEFAULT);
@@ -380,12 +414,14 @@ public class StreamsGroup implements Group {
     public void setTopology(StreamsTopology topology) {
         this.topology.set(Optional.ofNullable(topology));
         maybeUpdateGroupState();
+        refinerInputsVersion++;
     }
 
     public void setConfiguredTopology(ConfiguredTopology configuredTopology) {
         this.configuredTopology.set(Optional.ofNullable(configuredTopology));
         // Clear endpoint cache since subtopology source topics may have changed
         endpointToPartitionsCache.clear();
+        refinerInputsVersion++;
     }
 
     /**
@@ -560,6 +596,7 @@ public class StreamsGroup implements Group {
         updateStaticMember(oldMember, newMember);
         maybeUpdateGroupState();
         endpointToPartitionsCache.remove(newMember.memberId());
+        refinerInputsVersion++;
     }
 
     /**
@@ -590,6 +627,7 @@ public class StreamsGroup implements Group {
         maybeUpdateGroupState();
         endpointToPartitionsCache.remove(memberId);
         taskOffsets.remove(memberId);
+        refinerInputsVersion++;
     }
 
     /**
@@ -599,7 +637,9 @@ public class StreamsGroup implements Group {
      * @param memberOffsets   The reported task offsets and end-offsets.
      */
     public void updateTaskOffsets(String memberId, MemberTaskOffsets memberOffsets) {
-        taskOffsets.put(memberId, memberOffsets);
+        if (!memberOffsets.equals(taskOffsets.put(memberId, memberOffsets))) {
+            refinerInputsVersion++;
+        }
     }
 
     /**
@@ -650,6 +690,35 @@ public class StreamsGroup implements Group {
             assignmentEpoch,
             Map.copyOf(Objects.requireNonNull(refinedAssignment))
         ));
+    }
+
+    /**
+     * Whether the settled group was refined at the given assignment epoch, with the given configurations, and without
+     * any input of the refiner changing since -- in which case that refinement found no refinement step due, and
+     * refining again would derive the same intermediate assignment and find none due either. See
+     * {@link #recordSettledRefinement}.
+     *
+     * @param assignmentEpoch       The current assignment epoch.
+     * @param numWarmupReplicas     The group's current {@code num.warmup.replicas}.
+     * @param acceptableRecoveryLag The group's current {@code acceptable.recovery.lag}.
+     */
+    public boolean isSettledRefinementUpToDate(int assignmentEpoch, int numWarmupReplicas, long acceptableRecoveryLag) {
+        return settledRefinement.get().equals(
+            new SettledRefinement(assignmentEpoch, refinerInputsVersion, numWarmupReplicas, acceptableRecoveryLag));
+    }
+
+    /**
+     * Records that the settled group was refined from its current state at the given assignment epoch, with the given
+     * configurations, and that the refinement found no refinement step due. This is transient state; it must be set
+     * from the heartbeat path only, never while replaying records.
+     *
+     * @param assignmentEpoch       The current assignment epoch.
+     * @param numWarmupReplicas     The group's current {@code num.warmup.replicas}.
+     * @param acceptableRecoveryLag The group's current {@code acceptable.recovery.lag}.
+     */
+    public void recordSettledRefinement(int assignmentEpoch, int numWarmupReplicas, long acceptableRecoveryLag) {
+        settledRefinement.set(
+            new SettledRefinement(assignmentEpoch, refinerInputsVersion, numWarmupReplicas, acceptableRecoveryLag));
     }
 
     /**
@@ -765,6 +834,7 @@ public class StreamsGroup implements Group {
      */
     public void updateTargetAssignment(String memberId, TasksTuple newTargetAssignment) {
         targetAssignment.put(memberId, newTargetAssignment);
+        refinerInputsVersion++;
     }
 
     /**
@@ -774,6 +844,7 @@ public class StreamsGroup implements Group {
      */
     public void removeTargetAssignment(String memberId) {
         targetAssignment.remove(memberId);
+        refinerInputsVersion++;
     }
 
     /**

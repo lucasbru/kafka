@@ -20049,6 +20049,125 @@ public class GroupMetadataManagerTest {
     }
 
     @Test
+    public void testStreamsGroupDoesNotRefineASettledGroupAgainUntilARefinerInputChanges() {
+        String groupId = "fooup";
+        String memberId = Uuid.randomUuid().toString();
+        StreamsTopicFixture topic = streamsTopicFixture("subtopology1", "foo", 3);
+
+        MockAssignmentRefiner refiner = new MockAssignmentRefiner();
+        GroupMetadataManagerTestContext context = streamsGroupContextForRefinement(
+            groupId, refiner, topic, Map.of(memberId, List.of(0, 1, 2)), Map.of(memberId, DEFAULT_PROCESS_ID));
+        StreamsGroupHeartbeatRequestData heartbeat =
+            streamsGroupRefinementHeartbeat(groupId, memberId, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2));
+
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(1, refiner.numRefinements());
+
+        // Nothing the refiner depends on changed, so the settled group needs no refinement step, as before.
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(1, refiner.numRefinements());
+
+        // New task offsets are refined again, the same task offsets reported a second time are not.
+        StreamsGroupHeartbeatRequestData heartbeatWithOffsets = streamsGroupRefinementHeartbeat(
+            groupId, memberId, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2))
+            .setTaskOffsets(List.of(new StreamsGroupHeartbeatRequestData.TaskOffset()
+                .setSubtopologyId("subtopology1").setPartition(0).setOffset(10L)))
+            .setTaskEndOffsets(List.of(new StreamsGroupHeartbeatRequestData.TaskOffset()
+                .setSubtopologyId("subtopology1").setPartition(0).setOffset(20L)));
+        context.streamsGroupHeartbeat(heartbeatWithOffsets);
+        assertEquals(2, refiner.numRefinements());
+        context.streamsGroupHeartbeat(heartbeatWithOffsets);
+        assertEquals(2, refiner.numRefinements());
+
+        // The warm-up configurations do not bump the group epoch when they change, but the refiner depends on them.
+        Properties groupConfig = new Properties();
+        groupConfig.setProperty(GroupConfig.STREAMS_ACCEPTABLE_RECOVERY_LAG_CONFIG, "5");
+        context.updateGroupConfig(groupId, groupConfig);
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(3, refiner.numRefinements());
+        assertEquals(5L, refiner.lastPassedAcceptableRecoveryLag());
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(3, refiner.numRefinements());
+
+        groupConfig.setProperty(GroupConfig.STREAMS_NUM_WARMUP_REPLICAS_CONFIG, "5");
+        context.updateGroupConfig(groupId, groupConfig);
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(4, refiner.numRefinements());
+        assertEquals(5, refiner.lastPassedNumWarmupReplicas());
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(4, refiner.numRefinements());
+    }
+
+    @Test
+    public void testStreamsGroupRefinesASettledGroupAgainAfterARollback() {
+        String groupId = "fooup";
+        String memberId = Uuid.randomUuid().toString();
+        StreamsTopicFixture topic = streamsTopicFixture("subtopology1", "foo", 3);
+
+        MockAssignmentRefiner refiner = new MockAssignmentRefiner();
+        GroupMetadataManagerTestContext context = streamsGroupContextForRefinement(
+            groupId, refiner, topic, Map.of(memberId, List.of(0, 1, 2)), Map.of(memberId, DEFAULT_PROCESS_ID));
+        StreamsGroupHeartbeatRequestData heartbeat =
+            streamsGroupRefinementHeartbeat(groupId, memberId, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2));
+        context.commit();
+
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(1, refiner.numRefinements());
+
+        // The write the refinement was part of fails, so the record of the refinement is rolled back with it, and the
+        // next heartbeat refines the settled group again.
+        context.rollback();
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(2, refiner.numRefinements());
+        context.streamsGroupHeartbeat(heartbeat);
+        assertEquals(2, refiner.numRefinements());
+    }
+
+    @Test
+    public void testStreamsGroupRefinesAgainOnceTheMembersReconciledToARefinementStep() {
+        String groupId = "fooup";
+        String memberA = Uuid.randomUuid().toString();
+        String memberB = Uuid.randomUuid().toString();
+        StreamsTopicFixture topic = streamsTopicFixture("subtopology1", "foo", 3);
+
+        MockAssignmentRefiner refiner = new MockAssignmentRefiner();
+        GroupMetadataManagerTestContext context = streamsGroupContextForRefinement(
+            groupId,
+            refiner,
+            topic,
+            Map.of(memberA, List.of(0, 1, 2), memberB, List.of()),
+            Map.of(memberA, DEFAULT_PROCESS_ID, memberB, "process-b")
+        );
+        refiner.prepareRefinedAssignment(Map.of(
+            memberA, topic.targetAssignment(0, 1, 2),
+            memberB, mkTasksTuple(TaskRole.WARMUP, topic.tasks(2))
+        ));
+
+        // memberB's heartbeat mints a refinement step that hands it a warm-up task.
+        context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberB, "process-b", topic, List.of()));
+        assertEquals(1, refiner.numRefinements());
+        assertEquals(11, context.groupMetadataManager.streamsGroup(groupId).groupEpoch());
+
+        // memberB was reconciled to the new epoch right away; memberA moving to it as well settles the group, with
+        // assignments that differ from the ones the step was derived from.
+        context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberA, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2)));
+        assertEquals(1, refiner.numRefinements());
+        assertEquals(StreamsGroup.StreamsGroupState.STABLE, context.groupMetadataManager.streamsGroup(groupId).state());
+
+        // So the next heartbeat refines the settled group again, and the one after that does not.
+        StreamsGroupHeartbeatRequestData heartbeatB =
+            streamsGroupRefinementHeartbeat(groupId, memberB, "process-b", topic, List.of())
+                .setMemberEpoch(11)
+                .setWarmupTasks(topic.requestTasks(List.of(2)));
+        context.streamsGroupHeartbeat(heartbeatB);
+        assertEquals(2, refiner.numRefinements());
+        context.streamsGroupHeartbeat(heartbeatB);
+        assertEquals(2, refiner.numRefinements());
+    }
+
+    @Test
     public void testStreamsGroupDoesNotRefineWhenWarmupsAreDisabled() {
         String groupId = "fooup";
         String memberId = Uuid.randomUuid().toString();
