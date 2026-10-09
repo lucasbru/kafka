@@ -154,41 +154,30 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<TaskId, ActiveHolder> activeHolder = new HashMap<>();
         final Map<TaskId, List<TaskCopy>> taskCopies = new HashMap<>();
         final Map<String, Set<TaskId>> reportedByProcess = new HashMap<>();
-        final Map<String, Set<TaskId>> heldByProcess = new HashMap<>();
 
         for (final StreamsGroupMember member : members.values()) {
             final MemberTaskOffsets offsets = taskOffsets.getOrDefault(member.memberId(), MemberTaskOffsets.EMPTY);
-            final Set<TaskId> heldOnProcess = heldByProcess.computeIfAbsent(member.processId(), __ -> new HashSet<>());
 
             forEachStatefulActiveTask(
                 member.assignedTasks().activeTasksWithEpochs(),
                 statefulSubtopologies,
-                task -> {
-                    activeHolder.put(task, new ActiveHolder(
-                        member.memberId(),
-                        isRestoring(offsets, task),
-                        isCaughtUp(offsets, task, acceptableRecoveryLag)
-                    ));
-                    heldOnProcess.add(task);
-                }
+                task -> activeHolder.put(task, new ActiveHolder(
+                    member.memberId(),
+                    isRestoring(offsets, task),
+                    isCaughtUp(offsets, task, acceptableRecoveryLag)
+                ))
             );
 
             forEachStatefulTask(
                 member.assignedTasks().standbyTasks(),
                 statefulSubtopologies,
-                task -> {
-                    addTaskCopy(taskCopies, task, member, TaskRole.STANDBY, offsets, acceptableRecoveryLag);
-                    heldOnProcess.add(task);
-                }
+                task -> addTaskCopy(taskCopies, task, member, TaskRole.STANDBY, offsets, acceptableRecoveryLag)
             );
 
             forEachStatefulTask(
                 member.assignedTasks().warmupTasks(),
                 statefulSubtopologies,
-                task -> {
-                    addTaskCopy(taskCopies, task, member, TaskRole.WARMUP, offsets, acceptableRecoveryLag);
-                    heldOnProcess.add(task);
-                }
+                task -> addTaskCopy(taskCopies, task, member, TaskRole.WARMUP, offsets, acceptableRecoveryLag)
             );
 
             forEachStatefulReportedTask(
@@ -200,13 +189,35 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
 
         final Map<String, Set<TaskId>> onDiskByProcess = Utils.newHashMap(reportedByProcess.size());
         reportedByProcess.forEach((processId, reported) -> {
-            reported.removeAll(heldByProcess.getOrDefault(processId, Set.of()));
+            reported.removeIf(task -> isHeldOnProcess(activeHolder, taskCopies, members, processId, task));
             if (!reported.isEmpty()) {
                 onDiskByProcess.put(processId, reported);
             }
         });
 
         return new CurrentAssignmentIndex(activeHolder, taskCopies, onDiskByProcess);
+    }
+
+    /**
+     * Whether a member of the process holds a role for the task, according to the index built so far.
+     */
+    private static boolean isHeldOnProcess(
+        final Map<TaskId, ActiveHolder> activeHolder,
+        final Map<TaskId, List<TaskCopy>> taskCopies,
+        final Map<String, StreamsGroupMember> members,
+        final String processId,
+        final TaskId task
+    ) {
+        final ActiveHolder holder = activeHolder.get(task);
+        if (holder != null && processId.equals(members.get(holder.memberId()).processId())) {
+            return true;
+        }
+        for (final TaskCopy copy : taskCopies.getOrDefault(task, List.of())) {
+            if (processId.equals(copy.processId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
