@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.coordinator.group.streams.assignor;
 
-import java.util.Comparator;
 import java.util.Objects;
 
 /**
@@ -33,9 +32,8 @@ public record TaskId(String subtopologyId, int partition) implements Comparable<
 
     @Override
     public int compareTo(final TaskId other) {
-        return Comparator.comparing(TaskId::subtopologyId)
-            .thenComparingInt(TaskId::partition)
-            .compare(this, other);
+        final int bySubtopology = subtopologyId.compareTo(other.subtopologyId);
+        return bySubtopology != 0 ? bySubtopology : Integer.compare(partition, other.partition);
     }
 
     @Override
