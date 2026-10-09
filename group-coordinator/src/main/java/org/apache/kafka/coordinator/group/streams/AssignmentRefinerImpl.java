@@ -76,8 +76,10 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final CurrentAssignmentIndex currentAssignment = indexCurrentAssignment(
             members, taskOffsets, statefulSubtopologies, acceptableRecoveryLag, bySubtopology(misplacedTasks.keySet()));
         final Map<String, ProcessLoad> processLoad = indexProcessLoad(members, statefulSubtopologies);
+        final Map<TaskId, Set<String>> targetStandbyHolders =
+            statefulStandbyHolders(targetAssignment, statefulSubtopologies, misplacedTasks.keySet());
         final TaskDecisions decisions =
-            analyzeTasks(currentAssignment, misplacedTasks, targetAssignment, members, statefulSubtopologies, processLoad);
+            analyzeTasks(currentAssignment, misplacedTasks, targetStandbyHolders, members, processLoad);
         if (decisions.stagedMigrations().isEmpty()) {
             // Every task that does not sit on its target owner yet is granted in this step. A warm-up task is only
             // planted for a staged migration, and both reasons to hold a standby back (see filterStandbys) need one
@@ -87,7 +89,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final WarmupPlan warmupPlan =
             planWarmups(decisions, currentAssignment, members, processLoad, numWarmupReplicas);
         final SortedMap<String, SortedSet<TaskId>> withheldStandbys =
-            filterStandbys(targetAssignment, currentAssignment, decisions, warmupPlan, members, statefulSubtopologies);
+            filterStandbys(currentAssignment, decisions, warmupPlan, members, targetStandbyHolders);
 
         return assemble(targetAssignment, currentAssignment, decisions, warmupPlan, withheldStandbys);
     }
@@ -382,32 +384,31 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Set<String> statefulSubtopologies,
         final Map<String, ProcessLoad> processLoad
     ) {
+        final SortedMap<TaskId, String> targetOwners =
+            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies);
         return analyzeTasks(
             currentAssignment,
-            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies),
-            targetAssignment,
+            targetOwners,
+            statefulStandbyHolders(targetAssignment, statefulSubtopologies, targetOwners.keySet()),
             members,
-            statefulSubtopologies,
             processLoad
         );
     }
 
     /**
      * Like {@link #analyzeTasks(CurrentAssignmentIndex, Map, Map, Set, Map)}, for the given tasks that are not on their
-     * target owner yet, from {@link #misplacedStatefulActiveOwners}.
+     * target owner yet, from {@link #misplacedStatefulActiveOwners}, and their target standby holders, from
+     * {@link #statefulStandbyHolders}.
      */
     private static TaskDecisions analyzeTasks(
         final CurrentAssignmentIndex currentAssignment,
         final SortedMap<TaskId, String> targetOwners,
-        final Map<String, TasksTuple> targetAssignment,
+        final Map<TaskId, Set<String>> targetStandbyHolders,
         final Map<String, StreamsGroupMember> members,
-        final Set<String> statefulSubtopologies,
         final Map<String, ProcessLoad> processLoad
     ) {
         // The map is sorted, which gives the canonical task order that makes a derivation reproducible and leaves the
         // warmup budget pass that follows a deterministic tie-break to fall back on.
-        final Map<TaskId, Set<String>> targetStandbyHolders =
-            statefulStandbyHolders(targetAssignment, statefulSubtopologies, targetOwners.keySet());
 
         final List<StagedMigration> stagedMigrations = new ArrayList<>();
         final List<TaskGrant> grantedTasks = new ArrayList<>();
@@ -926,16 +927,32 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     ) {
         // Both reasons to withhold a standby placement need a staged migration of the task, so only the standby
         // placements of those tasks are looked at.
+        final Set<TaskId> stagedTasks = new HashSet<>();
+        decisions.stagedMigrations().forEach(migration -> stagedTasks.add(migration.task()));
+        final Map<TaskId, Set<String>> stagedTaskStandbyHolders = new HashMap<>();
+        forEachTargetStandby(targetAssignment, statefulSubtopologies, bySubtopology(stagedTasks),
+            (memberId, task) -> stagedTaskStandbyHolders.computeIfAbsent(task, __ -> new HashSet<>()).add(memberId));
+        return filterStandbys(currentAssignment, decisions, warmupPlan, members, stagedTaskStandbyHolders);
+    }
+
+    /**
+     * Like {@link #filterStandbys(Map, CurrentAssignmentIndex, TaskDecisions, WarmupPlan, Map, Set)}, given the members
+     * the target assignment places a standby of each task on, for at least the tasks with a staged migration.
+     */
+    private static SortedMap<String, SortedSet<TaskId>> filterStandbys(
+        final CurrentAssignmentIndex currentAssignment,
+        final TaskDecisions decisions,
+        final WarmupPlan warmupPlan,
+        final Map<String, StreamsGroupMember> members,
+        final Map<TaskId, Set<String>> targetStandbyHolders
+    ) {
         final Map<TaskId, String> activeStagedOnProcess = new HashMap<>();
         for (final StagedMigration migration : decisions.stagedMigrations()) {
             activeStagedOnProcess.put(migration.task(), members.get(migration.currentOwner()).processId());
         }
-        final Map<TaskId, List<String>> stagedTaskStandbyHolders = new HashMap<>();
-        forEachTargetStandby(targetAssignment, statefulSubtopologies, bySubtopology(activeStagedOnProcess.keySet()),
-            (memberId, task) -> stagedTaskStandbyHolders.computeIfAbsent(task, __ -> new ArrayList<>()).add(memberId));
 
         final StandbyConflicts conflicts = indexStandbyConflicts(
-            stagedTaskStandbyHolders,
+            targetStandbyHolders,
             activeStagedOnProcess,
             currentAssignment,
             warmupPlan,
@@ -943,8 +960,8 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         );
         final SortedMap<String, SortedSet<TaskId>> withheld = new TreeMap<>();
 
-        stagedTaskStandbyHolders.forEach((task, memberIds) -> {
-            for (final String memberId : memberIds) {
+        for (final TaskId task : activeStagedOnProcess.keySet()) {
+            for (final String memberId : targetStandbyHolders.getOrDefault(task, Set.of())) {
                 final StreamsGroupMember member = members.get(memberId);
                 if (member == null) {
                     // The target assignment can name a member the group has already removed. Its tasks reach nobody,
@@ -955,7 +972,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
                     withheld.computeIfAbsent(memberId, __ -> new TreeSet<>()).add(task);
                 }
             }
-        });
+        }
 
         return Collections.unmodifiableSortedMap(withheld);
     }
@@ -966,7 +983,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * on its current owner to fulfill its role of being borrowed.
      */
     private static StandbyConflicts indexStandbyConflicts(
-        final Map<TaskId, List<String>> stagedTaskStandbyHolders,
+        final Map<TaskId, Set<String>> targetStandbyHolders,
         final Map<TaskId, String> activeStagedOnProcess,
         final CurrentAssignmentIndex currentAssignment,
         final WarmupPlan warmupPlan,
@@ -983,7 +1000,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<TaskId, String> standbyKeptOnMember = new HashMap<>();
         final Set<TaskId> alreadyUndelivered = new HashSet<>();
         for (final TaskId task : warmupPlan.borrowedMigrations()) {
-            for (final String targetMemberId : stagedTaskStandbyHolders.getOrDefault(task, List.of())) {
+            for (final String targetMemberId : targetStandbyHolders.getOrDefault(task, Set.of())) {
                 final StreamsGroupMember targetMember = members.get(targetMemberId);
                 final String currentOwnerProcessId = activeStagedOnProcess.get(task);
                 if (targetMember == null // dropped out of the group
