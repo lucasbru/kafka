@@ -860,29 +860,41 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<String, StreamsGroupMember> members,
         final Set<String> statefulSubtopologies
     ) {
+        // Both reasons to withhold a standby placement need a staged migration of the task, so only the standby
+        // placements of those tasks are looked at.
+        final Map<TaskId, String> activeStagedOnProcess = new HashMap<>();
+        for (final StagedMigration migration : decisions.stagedMigrations()) {
+            activeStagedOnProcess.put(migration.task(), members.get(migration.currentOwner()).processId());
+        }
+        final Map<TaskId, List<String>> stagedTaskStandbyHolders = new HashMap<>();
+        targetAssignment.forEach((memberId, tasks) ->
+            forEachStatefulTask(tasks.standbyTasks(), statefulSubtopologies, task -> {
+                if (activeStagedOnProcess.containsKey(task)) {
+                    stagedTaskStandbyHolders.computeIfAbsent(task, __ -> new ArrayList<>()).add(memberId);
+                }
+            }));
+
         final StandbyConflicts conflicts = indexStandbyConflicts(
-            targetAssignment,
+            stagedTaskStandbyHolders,
+            activeStagedOnProcess,
             currentAssignment,
-            decisions,
             warmupPlan,
-            members,
-            statefulSubtopologies
+            members
         );
         final SortedMap<String, SortedSet<TaskId>> withheld = new TreeMap<>();
 
-        targetAssignment.forEach((memberId, tasks) -> {
-            final StreamsGroupMember member = members.get(memberId);
-            if (member == null) {
-                // The target assignment can name a member the group has already removed. Its tasks reach nobody, so
-                // there is nothing to hold back and no process to resolve it against.
-                return;
-            }
-
-            forEachStatefulTask(tasks.standbyTasks(), statefulSubtopologies, task -> {
+        stagedTaskStandbyHolders.forEach((task, memberIds) -> {
+            for (final String memberId : memberIds) {
+                final StreamsGroupMember member = members.get(memberId);
+                if (member == null) {
+                    // The target assignment can name a member the group has already removed. Its tasks reach nobody,
+                    // so there is nothing to hold back and no process to resolve it against.
+                    continue;
+                }
                 if (isStandbyWithheld(memberId, member.processId(), task, conflicts)) {
                     withheld.computeIfAbsent(memberId, __ -> new TreeSet<>()).add(task);
                 }
-            });
+            }
         });
 
         return Collections.unmodifiableSortedMap(withheld);
@@ -894,19 +906,12 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * on its current owner to fulfill its role of being borrowed.
      */
     private static StandbyConflicts indexStandbyConflicts(
-        final Map<String, TasksTuple> targetAssignment,
+        final Map<TaskId, List<String>> stagedTaskStandbyHolders,
+        final Map<TaskId, String> activeStagedOnProcess,
         final CurrentAssignmentIndex currentAssignment,
-        final TaskDecisions decisions,
         final WarmupPlan warmupPlan,
-        final Map<String, StreamsGroupMember> members,
-        final Set<String> statefulSubtopologies
+        final Map<String, StreamsGroupMember> members
     ) {
-        // Conflicts from staged migrations
-        final Map<TaskId, String> activeStagedOnProcess = new HashMap<>();
-        for (final StagedMigration migration : decisions.stagedMigrations()) {
-            activeStagedOnProcess.put(migration.task(), members.get(migration.currentOwner()).processId());
-        }
-
         // Conflicts from borrows
         //
         // If we have more than one standby (ie, `num.standby.replicas >= 2`), we need to ensure to only hold back
@@ -917,19 +922,18 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final BinaryOperator<String> firstInMemberOrder = (left, right) -> left.compareTo(right) <= 0 ? left : right;
         final Map<TaskId, String> standbyKeptOnMember = new HashMap<>();
         final Set<TaskId> alreadyUndelivered = new HashSet<>();
-        targetAssignment.forEach((targetMemberId, tasks) ->
-            forEachStatefulTask(tasks.standbyTasks(), statefulSubtopologies, task -> {
-                if (warmupPlan.borrowedMigrations().contains(task)) {
-                    final StreamsGroupMember targetMember = members.get(targetMemberId);
-                    final String currentOwnerProcessId = activeStagedOnProcess.get(task);
-                    if (targetMember == null // dropped out of the group
-                        || targetMember.processId().equals(currentOwnerProcessId)) { // stage migration; tracked above
-                        alreadyUndelivered.add(task);
-                    } else if (findCopyOnProcess(currentAssignment, task, targetMember.processId()).isEmpty()) { // only withhold if not a sibling move
-                        standbyKeptOnMember.merge(task, targetMemberId, firstInMemberOrder);
-                    }
+        for (final TaskId task : warmupPlan.borrowedMigrations()) {
+            for (final String targetMemberId : stagedTaskStandbyHolders.getOrDefault(task, List.of())) {
+                final StreamsGroupMember targetMember = members.get(targetMemberId);
+                final String currentOwnerProcessId = activeStagedOnProcess.get(task);
+                if (targetMember == null // dropped out of the group
+                    || targetMember.processId().equals(currentOwnerProcessId)) { // stage migration; tracked above
+                    alreadyUndelivered.add(task);
+                } else if (findCopyOnProcess(currentAssignment, task, targetMember.processId()).isEmpty()) { // only withhold if not a sibling move
+                    standbyKeptOnMember.merge(task, targetMemberId, firstInMemberOrder);
                 }
-            }));
+            }
+        }
         alreadyUndelivered.forEach(standbyKeptOnMember::remove);
 
         return new StandbyConflicts(activeStagedOnProcess, standbyKeptOnMember);
