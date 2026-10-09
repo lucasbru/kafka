@@ -227,6 +227,52 @@ public class AssignmentRefinerTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // isAffectedByTaskOffsetsChange
+    // ---------------------------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldNotBeAffectedByTaskOffsetsThatRestoreFurtherWithoutCatchingUp() {
+        // ACCEPTABLE_RECOVERY_LAG is 100: a lag of 500 and of 300 are both not caught up.
+        assertFalse(new AssignmentRefinerImpl().isAffectedByTaskOffsetsChange(
+            offsets(500L, 1000L), offsets(700L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldNotBeAffectedByTaskOffsetsThatStayCaughtUp() {
+        assertFalse(new AssignmentRefinerImpl().isAffectedByTaskOffsetsChange(
+            offsets(950L, 1000L), offsets(1990L, 2000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldBeAffectedByTaskOffsetsThatCatchUp() {
+        assertTrue(new AssignmentRefinerImpl().isAffectedByTaskOffsetsChange(
+            offsets(500L, 1000L), offsets(950L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldBeAffectedByTaskOffsetsThatStartARestore() {
+        assertTrue(new AssignmentRefinerImpl().isAffectedByTaskOffsetsChange(
+            offsets(Long.MAX_VALUE, 1000L), offsets(10L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldBeAffectedByTaskOffsetsThatAppearOrDisappear() {
+        final AssignmentRefinerImpl refiner = new AssignmentRefinerImpl();
+        // An active task that finishes its restore stops reporting offsets, and state found on disk starts reporting.
+        assertTrue(refiner.isAffectedByTaskOffsetsChange(offsets(500L, 1000L), MemberTaskOffsets.EMPTY, ACCEPTABLE_RECOVERY_LAG));
+        assertTrue(refiner.isAffectedByTaskOffsetsChange(MemberTaskOffsets.EMPTY, offsets(500L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+        assertTrue(refiner.isAffectedByTaskOffsetsChange(offsets(0, 500L, 1000L), offsets(1, 500L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldNotBeAffectedByUnchangedTaskOffsets() {
+        assertFalse(new AssignmentRefinerImpl().isAffectedByTaskOffsetsChange(
+            offsets(500L, 1000L), offsets(500L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+        assertFalse(new NoOpAssignmentRefiner().isAffectedByTaskOffsetsChange(
+            offsets(500L, 1000L), offsets(950L, 1000L), ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // isCaughtUp
     // ---------------------------------------------------------------------------------------------------------------
 

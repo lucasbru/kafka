@@ -75,6 +75,9 @@ final class RefinerFuzzMetrics {
      *        A hash over the intermediate assignments of all refiner calls, in call order. It changes when the refiner
      *        derives anything differently, so it tells whether a change to a refiner that is meant to keep its
      *        decisions, such as an optimization, does.
+     * @param skippableRefineCalls
+     *        How many of the refiner calls the coordinator would have skipped, because none of the refiner's inputs
+     *        changed since the previous call in a way the refiner declares relevant.
      */
     record ScenarioMetrics(
         long coldHandOvers,
@@ -90,7 +93,8 @@ final class RefinerFuzzMetrics {
         int refineCalls,
         double refineTotalMs,
         double refineMaxMs,
-        long refinedFingerprint
+        long refinedFingerprint,
+        int skippableRefineCalls
     ) {
 
         String describe() {
@@ -134,6 +138,7 @@ final class RefinerFuzzMetrics {
         private double refineTotalMs;
         private final List<Double> refineMaxMs = new ArrayList<>();
         private long refinedFingerprint;
+        private long skippableRefineCalls;
 
         void add(final ScenarioResult result) {
             final ScenarioMetrics metrics = result.metrics();
@@ -157,6 +162,7 @@ final class RefinerFuzzMetrics {
             refineTotalMs += metrics.refineTotalMs();
             refineMaxMs.add(metrics.refineMaxMs());
             refinedFingerprint = 31 * refinedFingerprint + metrics.refinedFingerprint();
+            skippableRefineCalls += metrics.skippableRefineCalls();
         }
 
         int scenarios() {
@@ -189,17 +195,18 @@ final class RefinerFuzzMetrics {
 
         static String header() {
             return String.format(Locale.ROOT,
-                "%-8s %9s %6s %7s %8s %8s %8s %13s %8s %7s %7s %8s %8s %11s %9s %9s %9s %16s",
+                "%-8s %9s %6s %7s %8s %8s %8s %13s %8s %7s %7s %8s %8s %11s %9s %9s %9s %9s %16s",
                 "refiner", "scenarios", "failed", "unconv", "cold", "unavoid", "diskOnly", "notProcessing", "ticks", "steps",
-                "wasted", "maxWarm", "maxXtra", "refineCalls", "mean(ms)", "p99(ms)", "max(ms)", "fingerprint");
+                "wasted", "maxWarm", "maxXtra", "refineCalls", "skippable", "mean(ms)", "p99(ms)", "max(ms)", "fingerprint");
         }
 
         String row(final String refiner) {
             return String.format(Locale.ROOT,
-                "%-8s %9d %6d %7d %8d %8d %8d %13d %8d %7d %7d %8d %8d %11d %9.4f %9.3f %9.3f %016x",
+                "%-8s %9d %6d %7d %8d %8d %8d %13d %8d %7d %7d %8d %8d %11d %9d %9.4f %9.3f %9.3f %016x",
                 refiner, scenarios, failedScenarios, unconvergedScenarios, coldHandOvers, unavoidableColdHandOvers,
                 diskOnlyColdHandOvers, notProcessingTaskTicks, ticks, refinementSteps, wastedWarmups, maxConcurrentWarmups, maxExtraCopies,
-                refineCalls, refineCalls == 0 ? 0.0 : refineTotalMs / refineCalls, percentile(0.99), percentile(1.0),
+                refineCalls, skippableRefineCalls, refineCalls == 0 ? 0.0 : refineTotalMs / refineCalls, percentile(0.99),
+                percentile(1.0),
                 refinedFingerprint);
         }
 

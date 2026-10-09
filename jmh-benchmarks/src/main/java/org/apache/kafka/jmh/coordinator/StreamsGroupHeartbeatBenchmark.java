@@ -244,6 +244,15 @@ public class StreamsGroupHeartbeatBenchmark {
             refineCalls++;
             return delegate.refine(members, targetAssignment, taskOffsets, subtopologies, numWarmupReplicas, acceptableRecoveryLag);
         }
+
+        @Override
+        public boolean isAffectedByTaskOffsetsChange(
+            MemberTaskOffsets previous,
+            MemberTaskOffsets current,
+            long acceptableRecoveryLag
+        ) {
+            return delegate.isAffectedByTaskOffsetsChange(previous, current, acceptableRecoveryLag);
+        }
     }
 
     @State(Scope.Benchmark)

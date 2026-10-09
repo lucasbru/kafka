@@ -113,6 +113,9 @@ final class RefinerFuzzSimulator {
     private long refineTotalNanos;
     private long refineMaxNanos;
     private long refinedFingerprint;
+    private int skippableRefineCalls;
+    private RefineCall previousCall;
+    private Map<String, TasksTuple> previousRefined;
 
     /**
      * @param scenario              The scenario to run.
@@ -182,7 +185,8 @@ final class RefinerFuzzSimulator {
             refineCalls,
             refineTotalNanos / 1_000_000.0,
             refineMaxNanos / 1_000_000.0,
-            refinedFingerprint
+            refinedFingerprint,
+            skippableRefineCalls
         ), List.copyOf(violations));
     }
 
@@ -587,6 +591,17 @@ final class RefinerFuzzSimulator {
 
         final List<String> found = new ArrayList<>(RefinerInvariants.check(call, refined, checkWarmupInvariants));
         found.addAll(RefinerInvariants.checkDeterminism(refiner, call, refined));
+        if (previousCall != null && RefinerInvariants.isUnchangedForRefiner(refiner, previousCall, call)) {
+            // The coordinator would not have called the refiner for these inputs, but used the previous result.
+            skippableRefineCalls++;
+            if (!refined.equals(previousRefined)) {
+                found.add("skipping: the refiner derived a different intermediate assignment although none of its "
+                    + "inputs changed in a way it declares relevant (see AssignmentRefiner#isAffectedByTaskOffsetsChange)"
+                    + "; before: " + format(previousRefined));
+            }
+        }
+        previousCall = call;
+        previousRefined = refined;
         if (!found.isEmpty()) {
             recordViolations(reason, call, refined, found);
         }

@@ -20124,6 +20124,35 @@ public class GroupMetadataManagerTest {
     }
 
     @Test
+    public void testStreamsGroupDoesNotRefineASettledGroupForTaskOffsetsTheRefinerDeclaresIrrelevant() {
+        String groupId = "fooup";
+        String memberId = Uuid.randomUuid().toString();
+        StreamsTopicFixture topic = streamsTopicFixture("subtopology1", "foo", 3);
+
+        MockAssignmentRefiner refiner = new MockAssignmentRefiner();
+        GroupMetadataManagerTestContext context = streamsGroupContextForRefinement(
+            groupId, refiner, topic, Map.of(memberId, List.of(0, 1, 2)), Map.of(memberId, DEFAULT_PROCESS_ID));
+        context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberId, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2)));
+        assertEquals(1, refiner.numRefinements());
+
+        // The refiner declares that the new task offsets cannot change what it derives, so they are stored, but the
+        // settled group is not refined again for them.
+        refiner.prepareAffectedByTaskOffsetsChange(false);
+        context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberId, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2))
+                .setTaskOffsets(List.of(new StreamsGroupHeartbeatRequestData.TaskOffset()
+                    .setSubtopologyId("subtopology1").setPartition(0).setOffset(10L)))
+                .setTaskEndOffsets(List.of(new StreamsGroupHeartbeatRequestData.TaskOffset()
+                    .setSubtopologyId("subtopology1").setPartition(0).setOffset(20L))));
+        assertEquals(1, refiner.numRefinements());
+        assertEquals(
+            Map.of("subtopology1", Map.of(0, 10L)),
+            context.groupMetadataManager.streamsGroup(groupId).taskOffsets(memberId).taskOffsets()
+        );
+    }
+
+    @Test
     public void testStreamsGroupRefinesAgainOnceTheMembersReconciledToARefinementStep() {
         String groupId = "fooup";
         String memberA = Uuid.randomUuid().toString();

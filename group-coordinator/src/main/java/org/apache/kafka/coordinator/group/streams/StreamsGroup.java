@@ -637,7 +637,21 @@ public class StreamsGroup implements Group {
      * @param memberOffsets   The reported task offsets and end-offsets.
      */
     public void updateTaskOffsets(String memberId, MemberTaskOffsets memberOffsets) {
-        if (!memberOffsets.equals(taskOffsets.put(memberId, memberOffsets))) {
+        updateTaskOffsets(memberId, memberOffsets, !memberOffsets.equals(taskOffsets(memberId)));
+    }
+
+    /**
+     * Updates the latest per-task changelog offsets reported by a member. These are transient and not persisted.
+     *
+     * @param memberId            The member ID.
+     * @param memberOffsets       The reported task offsets and end-offsets.
+     * @param affectsRefinement   Whether the change of the member's task offsets can change what the
+     *                            {@link AssignmentRefiner} derives, see
+     *                            {@link AssignmentRefiner#isAffectedByTaskOffsetsChange}.
+     */
+    public void updateTaskOffsets(String memberId, MemberTaskOffsets memberOffsets, boolean affectsRefinement) {
+        taskOffsets.put(memberId, memberOffsets);
+        if (affectsRefinement) {
             refinerInputsVersion++;
         }
     }

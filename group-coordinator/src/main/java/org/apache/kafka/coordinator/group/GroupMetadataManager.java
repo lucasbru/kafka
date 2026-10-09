@@ -157,6 +157,7 @@ import org.apache.kafka.coordinator.group.modern.share.ShareGroup.ShareGroupStat
 import org.apache.kafka.coordinator.group.modern.share.ShareGroupAssignmentBuilder;
 import org.apache.kafka.coordinator.group.modern.share.ShareGroupMember;
 import org.apache.kafka.coordinator.group.streams.AssignmentRefiner;
+import org.apache.kafka.coordinator.group.streams.MemberTaskOffsets;
 import org.apache.kafka.coordinator.group.streams.NoOpAssignmentRefiner;
 import org.apache.kafka.coordinator.group.streams.StreamsCoordinatorRecordHelpers;
 import org.apache.kafka.coordinator.group.streams.StreamsGroup;
@@ -2260,7 +2261,10 @@ public class GroupMetadataManager {
         // does not roll back, so updating it before validation could leave an orphaned entry for a member whose
         // (joining) heartbeat is then rejected.
         if (taskOffsets != null || taskEndOffsets != null) {
-            group.updateTaskOffsets(memberId, group.taskOffsets(memberId).update(taskOffsets, taskEndOffsets));
+            final MemberTaskOffsets previousTaskOffsets = group.taskOffsets(memberId);
+            final MemberTaskOffsets updatedTaskOffsets = previousTaskOffsets.update(taskOffsets, taskEndOffsets);
+            group.updateTaskOffsets(memberId, updatedTaskOffsets, streamsGroupAssignmentRefiner.isAffectedByTaskOffsetsChange(
+                previousTaskOffsets, updatedTaskOffsets, streamsGroupAcceptableRecoveryLag(groupId)));
         }
 
         // We validated a topology that was not validated before, so bump the group epoch as we may have to reassign tasks.

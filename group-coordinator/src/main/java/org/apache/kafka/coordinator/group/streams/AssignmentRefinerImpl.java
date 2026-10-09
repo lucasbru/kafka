@@ -96,6 +96,52 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     }
 
     /**
+     * The derivation reads a member's task offsets only through what they say about each task: whether an offset is
+     * reported (a restoring active task, or state on disk), whether the restore has started, and whether the task is
+     * caught up (see {@link #isRestoring}, {@link #hasRestoredSomething} and {@link #isCaughtUp}). A report that leaves
+     * all three unchanged for every task, such as a warm-up task restoring further without catching up yet, or a
+     * caught-up standby task following its changelog, cannot change the intermediate assignment.
+     */
+    @Override
+    public boolean isAffectedByTaskOffsetsChange(
+        final MemberTaskOffsets previous,
+        final MemberTaskOffsets current,
+        final long acceptableRecoveryLag
+    ) {
+        return !previous.equals(current)
+            && (changesAnyTaskState(previous, current, current.taskOffsets(), acceptableRecoveryLag)
+                || changesAnyTaskState(previous, current, current.taskEndOffsets(), acceptableRecoveryLag)
+                || changesAnyTaskState(previous, current, previous.taskOffsets(), acceptableRecoveryLag)
+                || changesAnyTaskState(previous, current, previous.taskEndOffsets(), acceptableRecoveryLag));
+    }
+
+    private static boolean changesAnyTaskState(
+        final MemberTaskOffsets previous,
+        final MemberTaskOffsets current,
+        final Map<String, Map<Integer, Long>> tasks,
+        final long acceptableRecoveryLag
+    ) {
+        for (final Map.Entry<String, Map<Integer, Long>> partitions : tasks.entrySet()) {
+            for (final Integer partition : partitions.getValue().keySet()) {
+                final TaskId task = new TaskId(partitions.getKey(), partition);
+                if (taskState(previous, task, acceptableRecoveryLag) != taskState(current, task, acceptableRecoveryLag)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * What the task offsets say about the task, as far as the derivation is concerned, encoded as bits.
+     */
+    private static int taskState(final MemberTaskOffsets offsets, final TaskId task, final long acceptableRecoveryLag) {
+        return (isRestoring(offsets, task) ? 1 : 0)
+            | (hasRestoredSomething(offsets, task) ? 2 : 0)
+            | (isCaughtUp(offsets, task, acceptableRecoveryLag) ? 4 : 0);
+    }
+
+    /**
      * Whether every stateful task the target assignment hands out as an active task already runs as an active task on
      * its target owner. A target owner that is no longer a member of the group holds nothing.
      */

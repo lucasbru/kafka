@@ -52,6 +52,40 @@ final class RefinerInvariants {
     }
 
     /**
+     * Whether the coordinator would skip deriving the intermediate assignment of a settled group for {@code current},
+     * because nothing the refiner depends on changed since {@code previous}: the members, their processes and current
+     * assignments, the target assignment, the subtopologies and the configurations are the same, and every change of a
+     * member's task offsets is one the refiner declares irrelevant.
+     */
+    static boolean isUnchangedForRefiner(final AssignmentRefiner refiner, final RefineCall previous, final RefineCall current) {
+        if (previous.numWarmupReplicas() != current.numWarmupReplicas()
+            || previous.acceptableRecoveryLag() != current.acceptableRecoveryLag()
+            || !previous.targetAssignment().equals(current.targetAssignment())
+            || !previous.subtopologies().equals(current.subtopologies())
+            || !previous.members().keySet().equals(current.members().keySet())) {
+            return false;
+        }
+        for (final StreamsGroupMember member : current.members().values()) {
+            final StreamsGroupMember previousMember = previous.members().get(member.memberId());
+            if (!member.processId().equals(previousMember.processId())
+                || !member.assignedTasks().equals(previousMember.assignedTasks())) {
+                return false;
+            }
+        }
+        final Set<String> reporters = new HashSet<>(previous.taskOffsets().keySet());
+        reporters.addAll(current.taskOffsets().keySet());
+        for (final String memberId : reporters) {
+            if (refiner.isAffectedByTaskOffsetsChange(
+                previous.taskOffsets().getOrDefault(memberId, MemberTaskOffsets.EMPTY),
+                current.taskOffsets().getOrDefault(memberId, MemberTaskOffsets.EMPTY),
+                current.acceptableRecoveryLag())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * The inputs of one refiner call.
      */
     record RefineCall(

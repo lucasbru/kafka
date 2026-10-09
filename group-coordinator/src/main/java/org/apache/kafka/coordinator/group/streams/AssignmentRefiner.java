@@ -93,6 +93,31 @@ public interface AssignmentRefiner {
         long acceptableRecoveryLag
     );
 
+    /**
+     * Whether a member reporting {@code current} task offsets, where it reported {@code previous} ones before, can
+     * change what {@link #refine} derives. The coordinator does not derive the intermediate assignment of a settled
+     * group again for a report that cannot change it, so an implementation that returns {@code false} must derive the
+     * same intermediate assignment from either report, all other inputs being equal.
+     * <p>
+     * A report is compared with the member's previous report, not with the one the last derivation read, so for a
+     * fixed {@code acceptableRecoveryLag} the reports this method declares interchangeable must form equivalence
+     * classes: a series of irrelevant changes must never add up to a relevant one. A change of
+     * {@code acceptableRecoveryLag} itself makes the coordinator derive the intermediate assignment again.
+     * <p>
+     * The default treats every change of the reported values as relevant.
+     *
+     * @param previous              The task offsets the member reported before, {@link MemberTaskOffsets#EMPTY} if none.
+     * @param current               The task offsets the member reports now.
+     * @param acceptableRecoveryLag The lag at or below which a warm-up task is considered caught up.
+     */
+    default boolean isAffectedByTaskOffsetsChange(
+        MemberTaskOffsets previous,
+        MemberTaskOffsets current,
+        long acceptableRecoveryLag
+    ) {
+        return !previous.equals(current);
+    }
+
     static boolean preservesActiveTaskCount(
         Map<String, TasksTuple> targetAssignment,
         Map<String, TasksTuple> refinedAssignment

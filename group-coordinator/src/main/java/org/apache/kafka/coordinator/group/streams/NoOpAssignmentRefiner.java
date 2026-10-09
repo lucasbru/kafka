@@ -39,4 +39,13 @@ public class NoOpAssignmentRefiner implements AssignmentRefiner {
     ) {
         return targetAssignment;
     }
+
+    @Override
+    public boolean isAffectedByTaskOffsetsChange(
+        MemberTaskOffsets previous,
+        MemberTaskOffsets current,
+        long acceptableRecoveryLag
+    ) {
+        return false;
+    }
 }

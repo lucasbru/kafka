@@ -36,9 +36,17 @@ public class MockAssignmentRefiner implements AssignmentRefiner {
     private SortedMap<String, ConfiguredSubtopology> lastPassedSubtopologies = null;
     private int lastPassedNumWarmupReplicas = -1;
     private long lastPassedAcceptableRecoveryLag = -1L;
+    private Boolean preparedAffectedByTaskOffsetsChange = null;
 
     public void prepareRefinedAssignment(Map<String, TasksTuple> refinedAssignment) {
         this.preparedRefinedAssignment = refinedAssignment;
+    }
+
+    /**
+     * Prepares what {@link #isAffectedByTaskOffsetsChange} answers, instead of treating every change as relevant.
+     */
+    public void prepareAffectedByTaskOffsetsChange(boolean affected) {
+        this.preparedAffectedByTaskOffsetsChange = affected;
     }
 
     public int numRefinements() {
@@ -86,5 +94,16 @@ public class MockAssignmentRefiner implements AssignmentRefiner {
         lastPassedNumWarmupReplicas = numWarmupReplicas;
         lastPassedAcceptableRecoveryLag = acceptableRecoveryLag;
         return preparedRefinedAssignment == null ? targetAssignment : preparedRefinedAssignment;
+    }
+
+    @Override
+    public boolean isAffectedByTaskOffsetsChange(
+        MemberTaskOffsets previous,
+        MemberTaskOffsets current,
+        long acceptableRecoveryLag
+    ) {
+        return preparedAffectedByTaskOffsetsChange != null
+            ? preparedAffectedByTaskOffsetsChange
+            : AssignmentRefiner.super.isAffectedByTaskOffsetsChange(previous, current, acceptableRecoveryLag);
     }
 }
