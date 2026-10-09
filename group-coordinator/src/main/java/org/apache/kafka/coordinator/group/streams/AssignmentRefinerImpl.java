@@ -21,6 +21,7 @@ import org.apache.kafka.coordinator.group.streams.assignor.TaskId;
 import org.apache.kafka.coordinator.group.streams.topics.ConfiguredSubtopology;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 
@@ -336,7 +338,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         // The map is sorted, which gives the canonical task order that makes a derivation reproducible and leaves the
         // warmup budget pass that follows a deterministic tie-break to fall back on.
         final SortedMap<TaskId, String> targetOwners =
-            misplacedStatefulActiveOwners(currentAssignment, targetAssignment, statefulSubtopologies);
+            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies);
         final Map<TaskId, Set<String>> targetStandbyHolders =
             statefulStandbyHolders(targetAssignment, statefulSubtopologies, targetOwners.keySet());
 
@@ -867,12 +869,8 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             activeStagedOnProcess.put(migration.task(), members.get(migration.currentOwner()).processId());
         }
         final Map<TaskId, List<String>> stagedTaskStandbyHolders = new HashMap<>();
-        targetAssignment.forEach((memberId, tasks) ->
-            forEachStatefulTask(tasks.standbyTasks(), statefulSubtopologies, task -> {
-                if (activeStagedOnProcess.containsKey(task)) {
-                    stagedTaskStandbyHolders.computeIfAbsent(task, __ -> new ArrayList<>()).add(memberId);
-                }
-            }));
+        forEachTargetStandby(targetAssignment, statefulSubtopologies, bySubtopology(activeStagedOnProcess.keySet()),
+            (memberId, task) -> stagedTaskStandbyHolders.computeIfAbsent(task, __ -> new ArrayList<>()).add(memberId));
 
         final StandbyConflicts conflicts = indexStandbyConflicts(
             stagedTaskStandbyHolders,
@@ -1100,18 +1098,29 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * restoring, needs no decision, and in a settled group that is every task.
      */
     private static SortedMap<TaskId, String> misplacedStatefulActiveOwners(
-        final CurrentAssignmentIndex currentAssignment,
+        final Map<String, StreamsGroupMember> members,
         final Map<String, TasksTuple> targetAssignment,
         final Set<String> statefulSubtopologies
     ) {
         final SortedMap<TaskId, String> owners = new TreeMap<>();
-        targetAssignment.forEach((memberId, tasks) ->
-            forEachStatefulTask(tasks.activeTasks(), statefulSubtopologies, task -> {
-                final ActiveHolder holder = currentAssignment.activeHolder().get(task);
-                if (holder == null || !memberId.equals(holder.memberId())) {
-                    owners.put(task, memberId);
+        for (final Map.Entry<String, TasksTuple> target : targetAssignment.entrySet()) {
+            final String memberId = target.getKey();
+            final StreamsGroupMember member = members.get(memberId);
+            final Map<String, Map<Integer, Integer>> currentActiveTasks =
+                member == null ? Map.of() : member.assignedTasks().activeTasksWithEpochs();
+            for (final Map.Entry<String, Set<Integer>> targetPartitions : target.getValue().activeTasks().entrySet()) {
+                final String subtopologyId = targetPartitions.getKey();
+                if (!statefulSubtopologies.contains(subtopologyId)) {
+                    continue;
                 }
-            }));
+                final Map<Integer, Integer> currentPartitions = currentActiveTasks.getOrDefault(subtopologyId, Map.of());
+                for (final Integer partition : targetPartitions.getValue()) {
+                    if (!currentPartitions.containsKey(partition)) {
+                        owners.put(new TaskId(subtopologyId, partition), memberId);
+                    }
+                }
+            }
+        }
         return owners;
     }
 
@@ -1127,14 +1136,44 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         if (tasks.isEmpty()) {
             return Map.of();
         }
+        final Map<String, Set<Integer>> partitionsBySubtopology = bySubtopology(tasks);
         final Map<TaskId, Set<String>> holders = new HashMap<>();
-        targetAssignment.forEach((memberId, assignment) ->
-            forEachStatefulTask(assignment.standbyTasks(), statefulSubtopologies, task -> {
-                if (tasks.contains(task)) {
-                    holders.computeIfAbsent(task, __ -> new HashSet<>()).add(memberId);
-                }
-            }));
+        forEachTargetStandby(targetAssignment, statefulSubtopologies, partitionsBySubtopology, (memberId, task) ->
+            holders.computeIfAbsent(task, __ -> new HashSet<>()).add(memberId));
         return holders;
+    }
+
+    /**
+     * Calls the action for every standby placement of the target assignment whose task is in
+     * {@code partitionsBySubtopology}, allocating a task ID only for those.
+     */
+    private static void forEachTargetStandby(
+        final Map<String, TasksTuple> targetAssignment,
+        final Set<String> statefulSubtopologies,
+        final Map<String, Set<Integer>> partitionsBySubtopology,
+        final BiConsumer<String, TaskId> action
+    ) {
+        for (final Map.Entry<String, TasksTuple> target : targetAssignment.entrySet()) {
+            for (final Map.Entry<String, Set<Integer>> standbys : target.getValue().standbyTasks().entrySet()) {
+                final Set<Integer> wanted = partitionsBySubtopology.get(standbys.getKey());
+                if (wanted == null || !statefulSubtopologies.contains(standbys.getKey())) {
+                    continue;
+                }
+                for (final Integer partition : standbys.getValue()) {
+                    if (wanted.contains(partition)) {
+                        action.accept(target.getKey(), new TaskId(standbys.getKey(), partition));
+                    }
+                }
+            }
+        }
+    }
+
+    private static Map<String, Set<Integer>> bySubtopology(final Collection<TaskId> tasks) {
+        final Map<String, Set<Integer>> partitionsBySubtopology = new HashMap<>();
+        for (final TaskId task : tasks) {
+            partitionsBySubtopology.computeIfAbsent(task.subtopologyId(), __ -> new HashSet<>()).add(task.partition());
+        }
+        return partitionsBySubtopology;
     }
 
     private static void addTaskCopy(
@@ -1269,9 +1308,8 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * <p>Only a {@link #hot()} holder has state a staged migration can use, so the two flags it is derived
      * from are recorded alongside the member ID.
      *
-     * <p>The identity matters even for a holder that is not hot: it is what tells the case analysis the task is
-     * already in the right place, and what lets a task be kept where it is when the target assignment names a member
-     * the group no longer has.
+     * <p>The identity matters even for a holder that is not hot: it is what lets a task be kept where it is when the
+     * target assignment names a member the group no longer has.
      *
      * @param memberId
      *        The member holding the task.
