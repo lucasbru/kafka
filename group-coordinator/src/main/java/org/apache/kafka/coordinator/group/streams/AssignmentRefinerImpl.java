@@ -216,23 +216,43 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<String, StreamsGroupMember> members,
         final Set<String> statefulSubtopologies
     ) {
-        final Map<String, Integer> memberCounts = new HashMap<>();
-        final Map<String, Integer> statefulTaskCounts = new HashMap<>();
+        // Per process: { stateful task count, member count }
+        final Map<String, int[]> countsByProcess = new HashMap<>();
 
         for (final StreamsGroupMember member : members.values()) {
-            final String processId = member.processId();
-            memberCounts.merge(processId, 1, Integer::sum);
-
-            final Consumer<TaskId> count = task -> statefulTaskCounts.merge(processId, 1, Integer::sum);
-            forEachStatefulActiveTask(member.assignedTasks().activeTasksWithEpochs(), statefulSubtopologies, count);
-            forEachStatefulTask(member.assignedTasks().standbyTasks(), statefulSubtopologies, count);
-            forEachStatefulTask(member.assignedTasks().warmupTasks(), statefulSubtopologies, count);
+            final int[] counts = countsByProcess.computeIfAbsent(member.processId(), __ -> new int[2]);
+            counts[0] += countStatefulActiveTasks(member.assignedTasks().activeTasksWithEpochs(), statefulSubtopologies)
+                + countStatefulTasks(member.assignedTasks().standbyTasks(), statefulSubtopologies)
+                + countStatefulTasks(member.assignedTasks().warmupTasks(), statefulSubtopologies);
+            counts[1]++;
         }
 
-        final Map<String, ProcessLoad> processLoad = Utils.newHashMap(memberCounts.size());
-        memberCounts.forEach((processId, memberCount) ->
-            processLoad.put(processId, new ProcessLoad(statefulTaskCounts.getOrDefault(processId, 0), memberCount)));
+        final Map<String, ProcessLoad> processLoad = Utils.newHashMap(countsByProcess.size());
+        countsByProcess.forEach((processId, counts) -> processLoad.put(processId, new ProcessLoad(counts[0], counts[1])));
         return processLoad;
+    }
+
+    private static int countStatefulActiveTasks(
+        final Map<String, Map<Integer, Integer>> activeTasksWithEpochs,
+        final Set<String> statefulSubtopologies
+    ) {
+        int count = 0;
+        for (final Map.Entry<String, Map<Integer, Integer>> entry : activeTasksWithEpochs.entrySet()) {
+            if (statefulSubtopologies.contains(entry.getKey())) {
+                count += entry.getValue().size();
+            }
+        }
+        return count;
+    }
+
+    private static int countStatefulTasks(final Map<String, Set<Integer>> tasks, final Set<String> statefulSubtopologies) {
+        int count = 0;
+        for (final Map.Entry<String, Set<Integer>> entry : tasks.entrySet()) {
+            if (statefulSubtopologies.contains(entry.getKey())) {
+                count += entry.getValue().size();
+            }
+        }
+        return count;
     }
 
     /**
