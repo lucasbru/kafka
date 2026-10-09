@@ -2566,7 +2566,7 @@ public class AssignmentRefinerTest {
         return AssignmentRefinerImpl.indexCurrentAssignment(
             members,
             taskOffsets,
-            subtopologies(),
+            AssignmentRefinerImpl.statefulSubtopologies(subtopologies()),
             ACCEPTABLE_RECOVERY_LAG
         );
     }
@@ -2580,7 +2580,7 @@ public class AssignmentRefinerTest {
             index(members, taskOffsets),
             targetAssignment,
             members,
-            subtopologies(),
+            AssignmentRefinerImpl.statefulSubtopologies(subtopologies()),
             load(members)
         );
     }
@@ -2588,7 +2588,7 @@ public class AssignmentRefinerTest {
     private static Map<String, AssignmentRefinerImpl.ProcessLoad> load(
         final Map<String, StreamsGroupMember> members
     ) {
-        return AssignmentRefinerImpl.indexProcessLoad(members, subtopologies());
+        return AssignmentRefinerImpl.indexProcessLoad(members, AssignmentRefinerImpl.statefulSubtopologies(subtopologies()));
     }
 
     private static AssignmentRefinerImpl.WarmupPlan plan(
@@ -2639,7 +2639,7 @@ public class AssignmentRefinerTest {
             decisions,
             AssignmentRefinerImpl.planWarmups(decisions, currentAssignment, members, load(members), numWarmupReplicas),
             members,
-            subtopologies()
+            AssignmentRefinerImpl.statefulSubtopologies(subtopologies())
         );
     }
 
