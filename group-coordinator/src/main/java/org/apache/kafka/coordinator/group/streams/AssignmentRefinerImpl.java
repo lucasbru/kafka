@@ -268,8 +268,10 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     ) {
         // The map is sorted, which gives the canonical task order that makes a derivation reproducible and leaves the
         // warmup budget pass that follows a deterministic tie-break to fall back on.
-        final SortedMap<TaskId, String> targetOwners = statefulActiveOwners(targetAssignment, statefulSubtopologies);
-        final Map<TaskId, Set<String>> targetStandbyHolders = statefulStandbyHolders(targetAssignment, statefulSubtopologies);
+        final SortedMap<TaskId, String> targetOwners =
+            misplacedStatefulActiveOwners(currentAssignment, targetAssignment, statefulSubtopologies);
+        final Map<TaskId, Set<String>> targetStandbyHolders =
+            statefulStandbyHolders(targetAssignment, statefulSubtopologies, targetOwners.keySet());
 
         final List<StagedMigration> stagedMigrations = new ArrayList<>();
         final List<TaskGrant> grantedTasks = new ArrayList<>();
@@ -277,12 +279,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         for (final Map.Entry<TaskId, String> targetOwnerByTask : targetOwners.entrySet()) {
             final TaskId task = targetOwnerByTask.getKey();
             final String targetOwner = targetOwnerByTask.getValue();
-
             final ActiveHolder holder = currentAssignment.activeHolder().get(task);
-            if (holder != null && targetOwner.equals(holder.memberId())) {
-                // The task is already on its target owner (either processing or still restoring)
-                continue;
-            }
 
             // Because of assignment offloading and member fencing, the target assignment could contain a member which
             // was removed from the group in the meantime. For this case, all previously owned tasks of this member
@@ -1027,29 +1024,45 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     }
 
     /**
-     * Inverts the target assignment into a lookup from stateful task to the member that is to run it as an active task.
+     * Inverts the target assignment into a lookup from stateful task to the member that is to run it as an active task,
+     * for the tasks that are not running on that member yet. A task already on its target owner, processing or still
+     * restoring, needs no decision, and in a settled group that is every task.
      */
-    private static SortedMap<TaskId, String> statefulActiveOwners(
+    private static SortedMap<TaskId, String> misplacedStatefulActiveOwners(
+        final CurrentAssignmentIndex currentAssignment,
         final Map<String, TasksTuple> targetAssignment,
         final Set<String> statefulSubtopologies
     ) {
         final SortedMap<TaskId, String> owners = new TreeMap<>();
         targetAssignment.forEach((memberId, tasks) ->
-            forEachStatefulTask(tasks.activeTasks(), statefulSubtopologies, task -> owners.put(task, memberId)));
+            forEachStatefulTask(tasks.activeTasks(), statefulSubtopologies, task -> {
+                final ActiveHolder holder = currentAssignment.activeHolder().get(task);
+                if (holder == null || !memberId.equals(holder.memberId())) {
+                    owners.put(task, memberId);
+                }
+            }));
         return owners;
     }
 
     /**
-     * Inverts the target assignment into a lookup from stateful task to the members that are to hold it as a standby.
+     * Inverts the target assignment into a lookup from stateful task to the members that are to hold it as a standby,
+     * for the given tasks only.
      */
     private static Map<TaskId, Set<String>> statefulStandbyHolders(
         final Map<String, TasksTuple> targetAssignment,
-        final Set<String> statefulSubtopologies
+        final Set<String> statefulSubtopologies,
+        final Set<TaskId> tasks
     ) {
+        if (tasks.isEmpty()) {
+            return Map.of();
+        }
         final Map<TaskId, Set<String>> holders = new HashMap<>();
-        targetAssignment.forEach((memberId, tasks) ->
-            forEachStatefulTask(tasks.standbyTasks(), statefulSubtopologies,
-                task -> holders.computeIfAbsent(task, __ -> new HashSet<>()).add(memberId)));
+        targetAssignment.forEach((memberId, assignment) ->
+            forEachStatefulTask(assignment.standbyTasks(), statefulSubtopologies, task -> {
+                if (tasks.contains(task)) {
+                    holders.computeIfAbsent(task, __ -> new HashSet<>()).add(memberId);
+                }
+            }));
         return holders;
     }
 
