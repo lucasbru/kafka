@@ -20010,6 +20010,45 @@ public class GroupMetadataManagerTest {
     }
 
     @Test
+    public void testStreamsGroupMintsARefinementStepThatOnlyChangesAnotherMember() {
+        String groupId = "fooup";
+        String memberA = Uuid.randomUuid().toString();
+        String memberB = Uuid.randomUuid().toString();
+        StreamsTopicFixture topic = streamsTopicFixture("subtopology1", "foo", 3);
+
+        MockAssignmentRefiner refiner = new MockAssignmentRefiner();
+        GroupMetadataManagerTestContext context = streamsGroupContextForRefinement(
+            groupId,
+            refiner,
+            topic,
+            Map.of(memberA, List.of(0, 1, 2), memberB, List.of()),
+            Map.of(memberA, DEFAULT_PROCESS_ID, memberB, "process-b")
+        );
+
+        refiner.prepareRefinedAssignment(Map.of(
+            memberA, topic.targetAssignment(0, 1, 2),
+            memberB, mkTasksTuple(TaskRole.WARMUP, topic.tasks(2))
+        ));
+
+        context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberA, DEFAULT_PROCESS_ID, topic, List.of(0, 1, 2)));
+
+        // The step leaves memberA's assignment as it is but hands memberB a warm-up task, so memberA's heartbeat mints
+        // it, and memberB is reconciled towards it on its next heartbeat without the group deriving it again.
+        StreamsGroup group = context.groupMetadataManager.streamsGroup(groupId);
+        assertEquals(11, group.groupEpoch());
+        assertEquals(
+            mkTasksTuple(TaskRole.WARMUP, topic.tasks(2)),
+            group.refinedAssignment(group.assignmentEpoch()).get(memberB)
+        );
+
+        CoordinatorResult<StreamsGroupHeartbeatResult, CoordinatorRecord> result = context.streamsGroupHeartbeat(
+            streamsGroupRefinementHeartbeat(groupId, memberB, "process-b", topic, List.of()));
+        assertEquals(topic.responseTasks(2), result.response().data().warmupTasks());
+        assertEquals(1, refiner.numRefinements());
+    }
+
+    @Test
     public void testStreamsGroupDoesNotRefineWhenWarmupsAreDisabled() {
         String groupId = "fooup";
         String memberId = Uuid.randomUuid().toString();

@@ -2282,9 +2282,12 @@ public class GroupMetadataManager {
         Map<String, TasksTuple> refinedGroupAssignment = null;
         if (assignmentUpdate == AssignmentUpdate.NONE && group.state() == StreamsGroup.StreamsGroupState.STABLE) {
             // We are not computing a new target assignment later, thus we try to refine the current target assignment
-            // into an intermediate assignment (with warm-up tasks) the member should be reconciled towards.
+            // into an intermediate assignment (with warm-up tasks) the members should be reconciled towards. The
+            // intermediate assignment is derived for the whole group, so a step is due if it changes the assignment of
+            // any member, not only of the member sending this heartbeat; the other members pick up their slices from
+            // the intermediate assignment cached for the new epoch.
             refinedGroupAssignment = refineAssignment(group, group.targetAssignment(), updatedConfiguredTopology);
-            if (!refinedGroupAssignment.getOrDefault(memberId, TasksTuple.EMPTY).sameTasks(updatedMember.assignedTasks())) {
+            if (changesAnyMember(group, refinedGroupAssignment)) {
                 assignmentUpdate = AssignmentUpdate.REFINED;
             }
         }
@@ -4719,6 +4722,25 @@ public class GroupMetadataManager {
             return targetAssignment;
         }
         return refinedAssignment;
+    }
+
+    /**
+     * Whether reconciling the members toward the given intermediate assignment would change what any of them is
+     * assigned.
+     *
+     * @param group              The streams group.
+     * @param refinedAssignment  The intermediate assignment keyed by member ID.
+     */
+    private static boolean changesAnyMember(
+        final StreamsGroup group,
+        final Map<String, TasksTuple> refinedAssignment
+    ) {
+        for (final StreamsGroupMember member : group.members().values()) {
+            if (!refinedAssignment.getOrDefault(member.memberId(), TasksTuple.EMPTY).sameTasks(member.assignedTasks())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
