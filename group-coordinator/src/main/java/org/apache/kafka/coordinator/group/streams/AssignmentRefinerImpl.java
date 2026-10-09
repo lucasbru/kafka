@@ -37,6 +37,7 @@ import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Derives the intermediate assignment which is the target assignment with the migration of a stateful task held back
@@ -612,6 +613,9 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<String, ProcessLoad> loadAfterGrants =
             loadAfterGrants(processLoad, currentAssignment, decisions, members);
         final List<FundingCandidate> candidates = new ArrayList<>();
+        final Map<String, ProcessFunding> fundingByProcess = new HashMap<>();
+        final Function<String, ProcessFunding> fundingOf = processId ->
+            fundingByProcess.computeIfAbsent(processId, __ -> new ProcessFunding(loadAfterGrants.get(processId)));
 
         for (final StagedMigration migration : decisions.stagedMigrations()) {
             final Warming warming = warmingOf(migration);
@@ -622,7 +626,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
                 // in one list -- a warm-up task kept from an earlier step included, because a kept one that cannot
                 // make progress gives way to a fresh plant that can (see fundingTier).
                 case KEEP, PLANT, SIBLING_MOVE ->
-                    candidates.add(fundingCandidate(migration, members, warming, restoringAnActive));
+                    candidates.add(fundingCandidate(migration, members, warming, restoringAnActive, fundingOf));
             }
         }
 
@@ -631,26 +635,19 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         // started out emptiest -- so the best candidate is found from scratch each time rather than sorted once.
         // note: this nested-loop is bounded by the warm-up budget; so while it's O(budget * candidate)
         // it's effectively not quadratic (we can consider `budget` a constant)
-        final Map<String, Integer> newWarmupsByProcess = new HashMap<>();
         int used = 0;
 
         while (used < numWarmupReplicas && !candidates.isEmpty()) {
             int best = 0;
             for (int candidate = 1; candidate < candidates.size(); candidate++) {
-                final int comparison = comparePriority(
-                    candidates.get(candidate),
-                    candidates.get(best),
-                    loadAfterGrants,
-                    newWarmupsByProcess
-                );
-                if (comparison < 0) {
+                if (comparePriority(candidates.get(candidate), candidates.get(best)) < 0) {
                     best = candidate;
                 }
             }
 
             final FundingCandidate funded = candidates.remove(best);
             warmupTasks.put(funded.task(), funded.targetOwner());
-            newWarmupsByProcess.merge(funded.targetProcessId(), funded.newWarmupsOnTargetProcess(), Integer::sum);
+            funded.targetProcess().newWarmups += funded.newWarmupsOnTargetProcess();
             used++;
         }
 
@@ -713,15 +710,16 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final StagedMigration migration,
         final Map<String, StreamsGroupMember> members,
         final Warming warming,
-        final Set<String> restoringAnActive
+        final Set<String> restoringAnActive,
+        final Function<String, ProcessFunding> fundingOf
     ) {
         return new FundingCandidate(
             migration.task(),
             migration.targetOwner(),
-            migration.targetProcessId().orElseThrow(),
-            members.get(migration.currentOwner()).processId(),
             warming,
-            fundingTier(migration, warming, restoringAnActive)
+            fundingTier(migration, warming, restoringAnActive),
+            fundingOf.apply(migration.targetProcessId().orElseThrow()),
+            fundingOf.apply(members.get(migration.currentOwner()).processId())
         );
     }
 
@@ -835,12 +833,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * migrations together so its relief arrives in one batch.
      * The task itself breaks a full tie, purely so that the same inputs always produce the same assignment.
      */
-    private static int comparePriority(
-        final FundingCandidate left,
-        final FundingCandidate right,
-        final Map<String, ProcessLoad> processLoad,
-        final Map<String, Integer> newWarmupsByProcess
-    ) {
+    private static int comparePriority(final FundingCandidate left, final FundingCandidate right) {
         final int byTier = Integer.compare(left.tier(), right.tier());
         if (byTier != 0) {
             return byTier;
@@ -851,41 +844,17 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             return byWarming;
         }
 
-        final int byTargetProcessLoad = Double.compare(
-            targetProcessLoad(left, processLoad, newWarmupsByProcess),
-            targetProcessLoad(right, processLoad, newWarmupsByProcess)
-        );
+        final int byTargetProcessLoad = Double.compare(left.targetProcess().load(), right.targetProcess().load());
         if (byTargetProcessLoad != 0) {
             return byTargetProcessLoad;
         }
 
-        final int byCurrentProcessLoad = Double.compare(
-            currentProcessLoad(right, processLoad, newWarmupsByProcess),
-            currentProcessLoad(left, processLoad, newWarmupsByProcess)
-        );
+        final int byCurrentProcessLoad = Double.compare(right.currentProcess().load(), left.currentProcess().load());
         if (byCurrentProcessLoad != 0) {
             return byCurrentProcessLoad;
         }
 
         return left.task().compareTo(right.task());
-    }
-
-    private static double targetProcessLoad(
-        final FundingCandidate candidate,
-        final Map<String, ProcessLoad> processLoad,
-        final Map<String, Integer> newWarmupsByProcess
-    ) {
-        return processLoad.get(candidate.targetProcessId())
-            .loadWith(newWarmupsByProcess.getOrDefault(candidate.targetProcessId(), 0));
-    }
-
-    private static double currentProcessLoad(
-        final FundingCandidate candidate,
-        final Map<String, ProcessLoad> processLoad,
-        final Map<String, Integer> newWarmupsByProcess
-    ) {
-        return processLoad.get(candidate.currentProcessId())
-            .loadWith(newWarmupsByProcess.getOrDefault(candidate.currentProcessId(), 0));
     }
 
     /**
@@ -1578,6 +1547,24 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     }
 
     /**
+     * A process's load as the warm-up funding order sees it: its load after this step's grants, raised by the warm-up
+     * tasks funded on it so far.
+     */
+    private static final class ProcessFunding {
+
+        private final ProcessLoad loadAfterGrants;
+        private int newWarmups = 0;
+
+        private ProcessFunding(final ProcessLoad loadAfterGrants) {
+            this.loadAfterGrants = loadAfterGrants;
+        }
+
+        private double load() {
+            return loadAfterGrants.loadWith(newWarmups);
+        }
+    }
+
+    /**
      * A staged migration competing for a warm-up slot, with the parts of the funding order that can be resolved
      * ahead of the comparisons.
      *
@@ -1586,22 +1573,26 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      * @param targetOwner
      *        The member the warm-up task goes on, if this migration is funded. Always the migration's target
      *        owner, so that the warm-up can be promoted in place once it has caught up.
-     * @param targetProcessId
-     *        The process that member runs in, whose load the funding order reads and the accounting raises.
-     * @param currentProcessId
-     *        The process still running the task, whose load the funding order reads (descending) as its secondary key.
      * @param warming
      *        What this migration needs from the budget, decided once when the migration is classified. The funding
      *        order reads it, as does the fall-back: a {@link Warming#SIBLING_MOVE} that does not get a warm-up slot
      *        falls back to borrowing the standby where it sits, everything else parks.
+     * @param tier
+     *        The round of funding the migration competes in, see {@link #fundingTier}.
+     * @param targetProcess
+     *        The funding state of the process the target owner runs in, whose load the funding order reads and the
+     *        accounting raises. Shared by all candidates of that process.
+     * @param currentProcess
+     *        The funding state of the process still running the task, whose load the funding order reads (descending)
+     *        as its secondary key. Shared by all candidates of that process.
      */
     private record FundingCandidate(
         TaskId task,
         String targetOwner,
-        String targetProcessId,
-        String currentProcessId,
         Warming warming,
-        int tier
+        int tier,
+        ProcessFunding targetProcess,
+        ProcessFunding currentProcess
     ) {
 
         /**
