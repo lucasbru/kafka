@@ -68,6 +68,12 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Map<String, ProcessLoad> processLoad = indexProcessLoad(members, statefulSubtopologies);
         final TaskDecisions decisions =
             analyzeTasks(currentAssignment, targetAssignment, members, statefulSubtopologies, processLoad);
+        if (decisions.stagedMigrations().isEmpty()) {
+            // Every task that does not sit on its target owner yet is granted in this step. A warm-up task is only
+            // planted for a staged migration, and both reasons to hold a standby back (see filterStandbys) need one
+            // too, so the intermediate assignment is the target assignment.
+            return targetAssignment;
+        }
         final WarmupPlan warmupPlan =
             planWarmups(decisions, currentAssignment, members, processLoad, numWarmupReplicas);
         final SortedMap<String, SortedSet<TaskId>> withheldStandbys =
