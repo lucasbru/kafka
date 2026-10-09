@@ -177,6 +177,56 @@ public class AssignmentRefinerTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // allStatefulActiveTasksOnTargetOwner
+    // ---------------------------------------------------------------------------------------------------------------
+
+    @Test
+    public void shouldFindAllStatefulActiveTasksOnTargetOwnerWhenOnlyStatelessAndStandbyTasksMove() {
+        final Map<String, StreamsGroupMember> members = Map.of(
+            "A", member("A", "p1", active(Map.of(STATEFUL, Set.of(0, 1), STATELESS, Set.of(0)))),
+            "B", member("B", "p2", active(Map.of(STATEFUL, Set.of(2))))
+        );
+        final Map<String, TasksTuple> targetAssignment = Map.of(
+            "A", active(Map.of(STATEFUL, Set.of(0, 1))),
+            "B", new TasksTuple(Map.of(STATEFUL, Set.of(2), STATELESS, Set.of(0)), Map.of(STATEFUL, Set.of(0)), Map.of())
+        );
+
+        assertTrue(AssignmentRefinerImpl.allStatefulActiveTasksOnTargetOwner(
+            members, targetAssignment, AssignmentRefinerImpl.statefulSubtopologies(subtopologies())));
+        assertSame(targetAssignment, new AssignmentRefinerImpl().refine(
+            members, targetAssignment, Map.of(), subtopologies(), 1, ACCEPTABLE_RECOVERY_LAG));
+    }
+
+    @Test
+    public void shouldNotFindAllStatefulActiveTasksOnTargetOwnerWhenAStatefulActiveTaskMoves() {
+        final Map<String, StreamsGroupMember> members = Map.of(
+            "A", member("A", "p1", active(Map.of(STATEFUL, Set.of(0, 1)))),
+            "B", member("B", "p2", active(Map.of(STATEFUL, Set.of(2))))
+        );
+        final Map<String, TasksTuple> targetAssignment = Map.of(
+            "A", active(Map.of(STATEFUL, Set.of(0))),
+            "B", active(Map.of(STATEFUL, Set.of(1, 2)))
+        );
+
+        assertFalse(AssignmentRefinerImpl.allStatefulActiveTasksOnTargetOwner(
+            members, targetAssignment, AssignmentRefinerImpl.statefulSubtopologies(subtopologies())));
+    }
+
+    @Test
+    public void shouldNotFindAllStatefulActiveTasksOnTargetOwnerWhenTheTargetOwnerLeftTheGroup() {
+        final Map<String, StreamsGroupMember> members = Map.of(
+            "A", member("A", "p1", active(Map.of(STATEFUL, Set.of(0, 1))))
+        );
+        final Map<String, TasksTuple> targetAssignment = Map.of(
+            "A", active(Map.of(STATEFUL, Set.of(0, 1))),
+            "B", active(Map.of(STATEFUL, Set.of(2)))
+        );
+
+        assertFalse(AssignmentRefinerImpl.allStatefulActiveTasksOnTargetOwner(
+            members, targetAssignment, AssignmentRefinerImpl.statefulSubtopologies(subtopologies())));
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // isCaughtUp
     // ---------------------------------------------------------------------------------------------------------------
 

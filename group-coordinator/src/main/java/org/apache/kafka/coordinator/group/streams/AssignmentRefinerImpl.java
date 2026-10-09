@@ -62,6 +62,12 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         }
 
         final Set<String> statefulSubtopologies = statefulSubtopologies(subtopologies);
+        if (allStatefulActiveTasksOnTargetOwner(members, targetAssignment, statefulSubtopologies)) {
+            // Nothing is left to migrate, so the case analysis would neither stage nor grant a task, and the
+            // intermediate assignment is the target assignment (see below). This is the common case of a settled
+            // group, so it is decided without indexing the group.
+            return targetAssignment;
+        }
 
         final CurrentAssignmentIndex currentAssignment =
             indexCurrentAssignment(members, taskOffsets, statefulSubtopologies, acceptableRecoveryLag);
@@ -80,6 +86,36 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             filterStandbys(targetAssignment, currentAssignment, decisions, warmupPlan, members, statefulSubtopologies);
 
         return assemble(targetAssignment, currentAssignment, decisions, warmupPlan, withheldStandbys);
+    }
+
+    /**
+     * Whether every stateful task the target assignment hands out as an active task already runs as an active task on
+     * its target owner. A target owner that is no longer a member of the group holds nothing.
+     */
+    static boolean allStatefulActiveTasksOnTargetOwner(
+        final Map<String, StreamsGroupMember> members,
+        final Map<String, TasksTuple> targetAssignment,
+        final Set<String> statefulSubtopologies
+    ) {
+        for (final Map.Entry<String, TasksTuple> target : targetAssignment.entrySet()) {
+            final Map<String, Set<Integer>> targetActiveTasks = target.getValue().activeTasks();
+            if (targetActiveTasks.isEmpty()) {
+                continue;
+            }
+            final StreamsGroupMember member = members.get(target.getKey());
+            final Map<String, Map<Integer, Integer>> currentActiveTasks =
+                member == null ? Map.of() : member.assignedTasks().activeTasksWithEpochs();
+            for (final Map.Entry<String, Set<Integer>> targetPartitions : targetActiveTasks.entrySet()) {
+                if (!statefulSubtopologies.contains(targetPartitions.getKey())) {
+                    continue;
+                }
+                final Map<Integer, Integer> currentPartitions = currentActiveTasks.get(targetPartitions.getKey());
+                if (currentPartitions == null || !currentPartitions.keySet().containsAll(targetPartitions.getValue())) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**
