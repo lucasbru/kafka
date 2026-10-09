@@ -71,11 +71,13 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             return targetAssignment;
         }
 
-        final CurrentAssignmentIndex currentAssignment =
-            indexCurrentAssignment(members, taskOffsets, statefulSubtopologies, acceptableRecoveryLag);
+        final SortedMap<TaskId, String> misplacedTasks =
+            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies);
+        final CurrentAssignmentIndex currentAssignment = indexCurrentAssignment(
+            members, taskOffsets, statefulSubtopologies, acceptableRecoveryLag, bySubtopology(misplacedTasks.keySet()));
         final Map<String, ProcessLoad> processLoad = indexProcessLoad(members, statefulSubtopologies);
         final TaskDecisions decisions =
-            analyzeTasks(currentAssignment, targetAssignment, members, statefulSubtopologies, processLoad);
+            analyzeTasks(currentAssignment, misplacedTasks, targetAssignment, members, statefulSubtopologies, processLoad);
         if (decisions.stagedMigrations().isEmpty()) {
             // Every task that does not sit on its target owner yet is granted in this step. A warm-up task is only
             // planted for a staged migration, and both reasons to hold a standby back (see filterStandbys) need one
@@ -153,16 +155,35 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Set<String> statefulSubtopologies,
         final long acceptableRecoveryLag
     ) {
+        return indexCurrentAssignment(members, taskOffsets, statefulSubtopologies, acceptableRecoveryLag, null);
+    }
+
+    /**
+     * Like {@link #indexCurrentAssignment(Map, Map, Set, long)}, but only indexes the given tasks, keyed by subtopology
+     * ID, or every task if {@code null}. The members restoring an active task are found among all tasks either way.
+     */
+    static CurrentAssignmentIndex indexCurrentAssignment(
+        final Map<String, StreamsGroupMember> members,
+        final Map<String, MemberTaskOffsets> taskOffsets,
+        final Set<String> statefulSubtopologies,
+        final long acceptableRecoveryLag,
+        final Map<String, Set<Integer>> tasksToIndex
+    ) {
         final Map<TaskId, ActiveHolder> activeHolder = new HashMap<>();
         final Map<TaskId, List<TaskCopy>> taskCopies = new HashMap<>();
         final Map<String, Set<TaskId>> reportedByProcess = new HashMap<>();
+        final Set<String> membersRestoringAnActive = new HashSet<>();
 
         for (final StreamsGroupMember member : members.values()) {
             final MemberTaskOffsets offsets = taskOffsets.getOrDefault(member.memberId(), MemberTaskOffsets.EMPTY);
+            if (isRestoringAnActive(member, offsets, statefulSubtopologies)) {
+                membersRestoringAnActive.add(member.memberId());
+            }
 
             forEachStatefulActiveTask(
                 member.assignedTasks().activeTasksWithEpochs(),
                 statefulSubtopologies,
+                tasksToIndex,
                 task -> activeHolder.put(task, new ActiveHolder(
                     member.memberId(),
                     isRestoring(offsets, task),
@@ -173,18 +194,21 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             forEachStatefulTask(
                 member.assignedTasks().standbyTasks(),
                 statefulSubtopologies,
+                tasksToIndex,
                 task -> addTaskCopy(taskCopies, task, member, TaskRole.STANDBY, offsets, acceptableRecoveryLag)
             );
 
             forEachStatefulTask(
                 member.assignedTasks().warmupTasks(),
                 statefulSubtopologies,
+                tasksToIndex,
                 task -> addTaskCopy(taskCopies, task, member, TaskRole.WARMUP, offsets, acceptableRecoveryLag)
             );
 
             forEachStatefulReportedTask(
                 offsets.taskOffsets(),
                 statefulSubtopologies,
+                tasksToIndex,
                 task -> reportedByProcess.computeIfAbsent(member.processId(), __ -> new HashSet<>()).add(task)
             );
         }
@@ -197,7 +221,30 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
             }
         });
 
-        return new CurrentAssignmentIndex(activeHolder, taskCopies, onDiskByProcess);
+        return new CurrentAssignmentIndex(activeHolder, taskCopies, onDiskByProcess, membersRestoringAnActive);
+    }
+
+    /**
+     * Whether the member reports an offset for any of its stateful active tasks, that is, restores one of them.
+     */
+    private static boolean isRestoringAnActive(
+        final StreamsGroupMember member,
+        final MemberTaskOffsets offsets,
+        final Set<String> statefulSubtopologies
+    ) {
+        for (final Map.Entry<String, Map<Integer, Long>> reported : offsets.taskOffsets().entrySet()) {
+            final Map<Integer, Integer> activePartitions =
+                member.assignedTasks().activeTasksWithEpochs().get(reported.getKey());
+            if (activePartitions == null || !statefulSubtopologies.contains(reported.getKey())) {
+                continue;
+            }
+            for (final Integer partition : reported.getValue().keySet()) {
+                if (activePartitions.containsKey(partition)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -335,10 +382,30 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final Set<String> statefulSubtopologies,
         final Map<String, ProcessLoad> processLoad
     ) {
+        return analyzeTasks(
+            currentAssignment,
+            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies),
+            targetAssignment,
+            members,
+            statefulSubtopologies,
+            processLoad
+        );
+    }
+
+    /**
+     * Like {@link #analyzeTasks(CurrentAssignmentIndex, Map, Map, Set, Map)}, for the given tasks that are not on their
+     * target owner yet, from {@link #misplacedStatefulActiveOwners}.
+     */
+    private static TaskDecisions analyzeTasks(
+        final CurrentAssignmentIndex currentAssignment,
+        final SortedMap<TaskId, String> targetOwners,
+        final Map<String, TasksTuple> targetAssignment,
+        final Map<String, StreamsGroupMember> members,
+        final Set<String> statefulSubtopologies,
+        final Map<String, ProcessLoad> processLoad
+    ) {
         // The map is sorted, which gives the canonical task order that makes a derivation reproducible and leaves the
         // warmup budget pass that follows a deterministic tie-break to fall back on.
-        final SortedMap<TaskId, String> targetOwners =
-            misplacedStatefulActiveOwners(members, targetAssignment, statefulSubtopologies);
         final Map<TaskId, Set<String>> targetStandbyHolders =
             statefulStandbyHolders(targetAssignment, statefulSubtopologies, targetOwners.keySet());
 
@@ -687,12 +754,7 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
         final TaskDecisions decisions,
         final Map<String, StreamsGroupMember> members
     ) {
-        final Set<String> restoringAnActive = new HashSet<>();
-        currentAssignment.activeHolder().forEach((task, holder) -> {
-            if (holder.restoring()) {
-                restoringAnActive.add(holder.memberId());
-            }
-        });
+        final Set<String> restoringAnActive = new HashSet<>(currentAssignment.membersRestoringAnActive());
 
         for (final TaskGrant grant : decisions.grantedTasks()) {
             if (startsARestore(currentAssignment, grant, members)) {
@@ -1196,12 +1258,21 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     private static void forEachStatefulActiveTask(
         final Map<String, Map<Integer, Integer>> activeTasksWithEpochs,
         final Set<String> statefulSubtopologies,
+        final Map<String, Set<Integer>> only,
         final Consumer<TaskId> action
     ) {
         activeTasksWithEpochs.forEach((subtopologyId, partitionsWithEpochs) -> {
-            if (statefulSubtopologies.contains(subtopologyId)) {
-                partitionsWithEpochs.keySet()
-                    .forEach(partitionId -> action.accept(new TaskId(subtopologyId, partitionId)));
+            if (!statefulSubtopologies.contains(subtopologyId)) {
+                return;
+            }
+            final Set<Integer> wanted = only == null ? null : only.get(subtopologyId);
+            if (only != null && wanted == null) {
+                return;
+            }
+            for (final Integer partitionId : partitionsWithEpochs.keySet()) {
+                if (wanted == null || wanted.contains(partitionId)) {
+                    action.accept(new TaskId(subtopologyId, partitionId));
+                }
             }
         });
     }
@@ -1209,12 +1280,21 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     private static void forEachStatefulReportedTask(
         final Map<String, Map<Integer, Long>> reportedOffsets,
         final Set<String> statefulSubtopologies,
+        final Map<String, Set<Integer>> only,
         final Consumer<TaskId> action
     ) {
         reportedOffsets.forEach((subtopologyId, offsetsByPartition) -> {
-            if (statefulSubtopologies.contains(subtopologyId)) {
-                offsetsByPartition.keySet()
-                    .forEach(partitionId -> action.accept(new TaskId(subtopologyId, partitionId)));
+            if (!statefulSubtopologies.contains(subtopologyId)) {
+                return;
+            }
+            final Set<Integer> wanted = only == null ? null : only.get(subtopologyId);
+            if (only != null && wanted == null) {
+                return;
+            }
+            for (final Integer partitionId : offsetsByPartition.keySet()) {
+                if (wanted == null || wanted.contains(partitionId)) {
+                    action.accept(new TaskId(subtopologyId, partitionId));
+                }
             }
         });
     }
@@ -1222,11 +1302,21 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
     private static void forEachStatefulTask(
         final Map<String, Set<Integer>> tasks,
         final Set<String> statefulSubtopologies,
+        final Map<String, Set<Integer>> only,
         final Consumer<TaskId> action
     ) {
         tasks.forEach((subtopologyId, partitionIds) -> {
-            if (statefulSubtopologies.contains(subtopologyId)) {
-                partitionIds.forEach(partitionId -> action.accept(new TaskId(subtopologyId, partitionId)));
+            if (!statefulSubtopologies.contains(subtopologyId)) {
+                return;
+            }
+            final Set<Integer> wanted = only == null ? null : only.get(subtopologyId);
+            if (only != null && wanted == null) {
+                return;
+            }
+            for (final Integer partitionId : partitionIds) {
+                if (wanted == null || wanted.contains(partitionId)) {
+                    action.accept(new TaskId(subtopologyId, partitionId));
+                }
             }
         });
     }
@@ -1266,11 +1356,14 @@ public class AssignmentRefinerImpl implements AssignmentRefiner {
      *        that no role it has been granted accounts for. How far behind that state is cannot be measured, because
      *        a member reports an end offset only for a task it is restoring. A process with no such task has no
      *        entry.
+     * @param membersRestoringAnActive
+     *        The members restoring an active task, among all of their tasks, also when the index covers only some.
      */
     record CurrentAssignmentIndex(
         Map<TaskId, ActiveHolder> activeHolder,
         Map<TaskId, List<TaskCopy>> taskCopies,
-        Map<String, Set<TaskId>> onDiskByProcess
+        Map<String, Set<TaskId>> onDiskByProcess,
+        Set<String> membersRestoringAnActive
     ) {
     }
 
